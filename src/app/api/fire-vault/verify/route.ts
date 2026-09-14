@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { verifyCodeSchema, FIRE_VAULT_PASSCODE } from "@/lib/fire-vault/schema";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { createSessionCookie, FIRE_VAULT_COOKIE_NAME, FIRE_VAULT_SESSION_MAX_AGE_SECONDS } from "@/lib/fire-vault/session";
+import { escapeHtml, FIRE_VAULT_BROKER_RECIPIENT, sendFireVaultNotification } from "@/lib/fire-vault/mailer";
 
 export const runtime = "nodejs";
 
@@ -39,14 +40,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "That code doesn't match. Check your email and try again." }, { status: 401 });
   }
 
-  const cookieValue = createSessionCookie(data.name);
+  const cookieValue = createSessionCookie(data.name, data.email, data.mobile);
   const response = NextResponse.json({ ok: true });
   response.cookies.set(FIRE_VAULT_COOKIE_NAME, cookieValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/fire-vault",
+    // Root path, not "/fire-vault"   the API routes that need to read this cookie live under
+    // "/api/fire-vault/*", a sibling path the browser would never send a "/fire-vault"-scoped
+    // cookie to.
+    path: "/",
     maxAge: FIRE_VAULT_SESSION_MAX_AGE_SECONDS,
   });
+
+  // Fire-and-forget: let the visitor into the calculator immediately, don't make them wait on
+  // this email to complete.
+  void sendFireVaultNotification({
+    to: FIRE_VAULT_BROKER_RECIPIENT,
+    subject: `New FIRE Vault signup — ${data.name}`,
+    html: `
+      <h2>New FIRE Vault signup</h2>
+      <p><strong>Name:</strong> ${escapeHtml(data.name)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(data.email)}</p>
+      <p><strong>Mobile:</strong> ${escapeHtml(data.mobile)}</p>
+      <p><strong>Signed up:</strong> ${new Date().toLocaleString("en-AU", { timeZone: "Australia/Sydney", dateStyle: "medium", timeStyle: "short" })} AEST</p>
+      <hr />
+      <p style="color:#888;font-size:12px;">They now have access to the FIRE Vault calculator. You'll get a second email with their numbers once they finish using it.</p>
+    `,
+  });
+
   return response;
 }

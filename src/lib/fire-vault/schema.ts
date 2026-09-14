@@ -7,6 +7,7 @@ export const FIRE_VAULT_PASSCODE = "FIRELOANS26";
 export const sendCodeSchema = z.object({
   name: z.string().min(2, "Enter your name").max(200),
   email: z.string().email("Enter a valid email").max(320),
+  mobile: z.string().min(8, "Enter a valid mobile number").max(30),
   // Honeypot   see contact-schema.ts for the same pattern.
   company: z.string().max(200).optional().or(z.literal("")),
 });
@@ -15,6 +16,51 @@ export type SendCodeValues = z.infer<typeof sendCodeSchema>;
 export const verifyCodeSchema = z.object({
   name: z.string().min(2, "Enter your name").max(200),
   email: z.string().email("Enter a valid email").max(320),
+  mobile: z.string().min(8, "Enter a valid mobile number").max(30),
   code: z.string().min(1, "Enter the code from your email").max(50),
 });
 export type VerifyCodeValues = z.infer<typeof verifyCodeSchema>;
+
+/**
+ * Sent as a `navigator.sendBeacon` payload when a verified visitor leaves the FIRE Vault
+ * calculator, so the broker gets their actual numbers, not just that they signed up. Name and
+ * email are NOT taken from this payload server-side (an attacker could put anything here) —
+ * the route re-derives identity from the visitor's own verified session cookie instead. This
+ * schema only validates the calculator snapshot itself.
+ */
+const applicantSnapshotSchema = z.object({ grossSalary: z.number(), additionalIncome: z.number() });
+const propertySnapshotSchema = z.object({ weeklyRent: z.number(), monthlyExpenses: z.number() });
+const loanSnapshotSchema = z.object({
+  balance: z.number(),
+  ratePct: z.number(),
+  termYears: z.number(),
+  termMonths: z.number(),
+  monthlyRepayment: z.number(),
+});
+
+export const leadSnapshotSchema = z.object({
+  input: z.object({
+    applicants: z.array(applicantSnapshotSchema).min(1).max(4),
+    properties: z.array(propertySnapshotSchema).max(10),
+    dependents: z.number(),
+    location: z.enum(["rest_of_australia", "remote"]),
+    useHemBenchmark: z.boolean(),
+    manualMonthlyExpenses: z.number(),
+    loans: z.array(loanSnapshotSchema).max(10),
+    carLoanMonthly: z.number(),
+    personalLoanMonthly: z.number(),
+    creditCardLimit: z.number(),
+    fireVaultRatePct: z.number(),
+  }),
+  summary: z.object({
+    totalGrossAnnualIncome: z.number(),
+    totalNetMonthlyIncome: z.number(),
+    combinedLoanBalance: z.number(),
+    monthlySurplus: z.number(),
+    currentPayoffLabel: z.string().max(100),
+    acceleratedPayoffLabel: z.string().max(100),
+    interestSaved: z.number(),
+    neverPaysOff: z.boolean(),
+  }),
+});
+export type LeadSnapshotValues = z.infer<typeof leadSnapshotSchema>;

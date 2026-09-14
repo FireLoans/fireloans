@@ -15,8 +15,9 @@ type Step = "request" | "verify";
 
 /**
  * FIRE Vault's access gate is intentionally stateless: no account is created, nothing is
- * written to a database or disk anywhere. Entering a name + email gets a fixed access code
- * emailed to that address (see src/lib/fire-vault/schema.ts); entering that code back sets a
+ * written to a database or disk anywhere. Entering a name, email and mobile number gets a
+ * fixed access code emailed to that address (see src/lib/fire-vault/schema.ts); entering that
+ * code back sets a
  * signed, expiring cookie (src/lib/fire-vault/session.ts) that the server re-verifies on every
  * request to /fire-vault. That's the entire "login" — nothing persists beyond it.
  */
@@ -25,6 +26,7 @@ export function FireVaultGate() {
   const [step, setStep] = useState<Step>("request");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [mobile, setMobile] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
   const [devNotice, setDevNotice] = useState<string | null>(null);
 
@@ -50,6 +52,7 @@ export function FireVaultGate() {
       if (data?.devNotice) setDevNotice(data.devNotice);
       setName(values.name);
       setEmail(values.email);
+      setMobile(values.mobile);
       setStep("verify");
     } catch {
       setServerError("Something went wrong. Please try again.");
@@ -62,7 +65,7 @@ export function FireVaultGate() {
       const res = await fetch("/api/fire-vault/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, code: values.code }),
+        body: JSON.stringify({ name, email, mobile, code: values.code }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -89,7 +92,7 @@ export function FireVaultGate() {
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-cream/65">
           {step === "request"
-            ? "A more powerful serviceability calculator for multi-property, multi-loan scenarios. Enter your name and email and we'll send you an access code — nothing is stored."
+            ? "A more powerful serviceability calculator for multi-property, multi-loan scenarios. Enter your details and we'll send you an access code — nothing is stored."
             : `We sent a code to ${email}. Enter it below to continue.`}
         </p>
 
@@ -137,6 +140,21 @@ export function FireVaultGate() {
                 />
                 {requestForm.formState.errors.email && (
                   <p className="mt-1.5 text-sm text-error">{requestForm.formState.errors.email.message}</p>
+                )}
+              </div>
+              <div>
+                <label className={labelClasses} htmlFor="fv-mobile">
+                  Mobile Number
+                </label>
+                <input
+                  id="fv-mobile"
+                  type="tel"
+                  className={fieldClasses}
+                  placeholder="04XX XXX XXX"
+                  {...requestForm.register("mobile")}
+                />
+                {requestForm.formState.errors.mobile && (
+                  <p className="mt-1.5 text-sm text-error">{requestForm.formState.errors.mobile.message}</p>
                 )}
               </div>
 

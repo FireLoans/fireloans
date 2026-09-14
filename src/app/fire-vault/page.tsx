@@ -21,7 +21,7 @@ export default async function FireVaultPage() {
       title="FIRE Vault"
       description="A serviceability calculator built for multi-applicant, multi-property borrowers   up to 4 applicants, 10 investment properties and 10 existing loans, combined into one accelerated payoff comparison."
     >
-      {session ? <FireVaultCalculator /> : <FireVaultGate />}
+      {session ? <FireVaultCalculator name={session.name} email={session.email} /> : <FireVaultGate />}
     </CalculatorLayout>
   );
 }

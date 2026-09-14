@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculateFireVault,
   emptyApplicant,
@@ -154,15 +154,67 @@ function LoanFields({
   );
 }
 
-export function FireVaultCalculator() {
+export function FireVaultCalculator({ name, email }: { name: string; email: string }) {
   const [input, setInput] = useState<UIState>(DEFAULT_STATE);
+  const hasInteracted = useRef(false);
 
   function set<K extends keyof UIState>(key: K, value: UIState[K]) {
+    hasInteracted.current = true;
     setInput((prev) => ({ ...prev, [key]: value }));
   }
 
   const result = useMemo(() => calculateFireVault(input), [input]);
   const timeSaved = timeSavedYearsMonths(result.timeSavedMonths);
+
+  // Broker lead capture: when the visitor leaves (switches tabs, closes, navigates away), send
+  // their latest numbers to the broker inbox via a beacon   fire-and-forget, works even during
+  // unload, and only fires once (and only if they actually changed something from the demo
+  // defaults, so idle page-opens don't generate noise).
+  const latestSnapshot = useRef({ input, result });
+  useEffect(() => {
+    latestSnapshot.current = { input, result };
+  }, [input, result]);
+  const snapshotSent = useRef(false);
+
+  useEffect(() => {
+    function sendSnapshot() {
+      if (snapshotSent.current || !hasInteracted.current) return;
+      const { input: currentInput, result: currentResult } = latestSnapshot.current;
+      const payload = {
+        name,
+        email,
+        input: currentInput,
+        summary: {
+          totalGrossAnnualIncome: currentResult.totalGrossAnnualIncome,
+          totalNetMonthlyIncome: currentResult.totalNetMonthlyIncome,
+          combinedLoanBalance: currentResult.combinedLoanBalance,
+          monthlySurplus: currentResult.monthlySurplus,
+          currentPayoffLabel: yearsMonthsLabel(currentResult.currentPath.yearsToPayOff),
+          acceleratedPayoffLabel: currentResult.acceleratedPath.neverPaysOff
+            ? "Not viable at this rate"
+            : yearsMonthsLabel(currentResult.acceleratedPath.yearsToPayOff),
+          interestSaved: currentResult.interestSaved,
+          neverPaysOff: currentResult.acceleratedPath.neverPaysOff,
+        },
+      };
+      const sent = navigator.sendBeacon(
+        "/api/fire-vault/lead-snapshot",
+        new Blob([JSON.stringify(payload)], { type: "application/json" })
+      );
+      if (sent) snapshotSent.current = true;
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") sendSnapshot();
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", sendSnapshot);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", sendSnapshot);
+    };
+  }, [name, email]);
 
   return (
     <div className="flex flex-col gap-8">

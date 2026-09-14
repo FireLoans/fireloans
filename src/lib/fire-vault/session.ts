@@ -33,11 +33,11 @@ function sign(payload: string): string {
   return createHmac("sha256", getSecret()).update(payload).digest("base64url");
 }
 
-export type FireVaultSession = { name: string; exp: number };
+export type FireVaultSession = { name: string; email: string; mobile: string; exp: number };
 
-export function createSessionCookie(name: string): string {
+export function createSessionCookie(name: string, email: string, mobile: string): string {
   const exp = Date.now() + FIRE_VAULT_SESSION_MAX_AGE_SECONDS * 1000;
-  const payload = base64UrlEncode(JSON.stringify({ name, exp } satisfies FireVaultSession));
+  const payload = base64UrlEncode(JSON.stringify({ name, email, mobile, exp } satisfies FireVaultSession));
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
@@ -55,7 +55,7 @@ export function verifySessionCookie(cookieValue: string | undefined | null): Fir
   try {
     const session = JSON.parse(base64UrlDecode(payload)) as FireVaultSession;
     if (typeof session.exp !== "number" || Date.now() > session.exp) return null;
-    if (typeof session.name !== "string") return null;
+    if (typeof session.name !== "string" || typeof session.email !== "string" || typeof session.mobile !== "string") return null;
     return session;
   } catch {
     return null;
