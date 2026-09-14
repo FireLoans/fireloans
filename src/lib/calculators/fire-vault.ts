@@ -11,7 +11,7 @@ import {
   estimateAnnualNetIncome,
   marginalTaxRateFor,
 } from "./borrowing-power";
-import { getHemMonthly } from "./hem-table";
+import { getHemMonthlyByLocation, type HemLocation } from "./hem-table";
 
 /**
  * FIRE Vault is the site's own version of the "redirect 100% of household surplus at an
@@ -57,6 +57,7 @@ export type FireVaultInput = {
   applicants: Applicant[]; // 1-4
   properties: InvestmentProperty[]; // 0-10
   dependents: number;
+  location: HemLocation;
   useHemBenchmark: boolean;
   manualMonthlyExpenses: number;
   loans: ExistingLoan[]; // 0-10
@@ -193,7 +194,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   const totalNetMonthlyIncome = totalNetAnnualIncome / 12;
 
   const isJoint = input.applicants.length >= 2;
-  const hemMonthlyBenchmark = getHemMonthly(isJoint, input.dependents, totalGrossAnnualIncome);
+  const hemMonthlyBenchmark = getHemMonthlyByLocation(isJoint, input.location, input.dependents, totalGrossAnnualIncome);
   // Mirrors RapidPay's own "Update HEM?" toggle behaviour: locked to the benchmark, or a
   // straight manual override   not floored, unlike the site's own Borrowing Power calculator.
   const assessedMonthlyExpenses = input.useHemBenchmark ? hemMonthlyBenchmark : input.manualMonthlyExpenses;

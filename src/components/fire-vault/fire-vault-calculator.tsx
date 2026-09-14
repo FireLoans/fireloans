@@ -23,6 +23,7 @@ import {
   formatCurrency2,
 } from "@/components/calculators/calculator-fields";
 import { DualAreaChart } from "@/components/calculators/dual-area-chart";
+import type { HemLocation } from "@/lib/calculators/hem-table";
 import { FireVaultScheduleTable } from "./fire-vault-schedule-table";
 
 const CURRENT_PATH_COLOR = "#8a8f95"; // ink-soft   "keep doing what you're doing"
@@ -48,6 +49,7 @@ const DEFAULT_STATE: UIState = {
   applicants: [{ grossSalary: 100000, additionalIncome: 0 }],
   properties: [],
   dependents: 0,
+  location: "rest_of_australia",
   useHemBenchmark: true,
   manualMonthlyExpenses: 2500,
   loans: [{ balance: 500000, ratePct: 6.5, termYears: 30, termMonths: 0, monthlyRepayment: 3200 }],
@@ -167,18 +169,21 @@ export function FireVaultCalculator() {
       {/* All inputs   one full-width card, stacked top to bottom */}
       <div className="flex flex-col gap-7 rounded-3xl bg-paper p-6 shadow-xl shadow-ink/5 sm:p-8">
         <div>
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-end justify-between gap-4">
             <h2 className="font-display text-xl font-semibold text-ink">Applicants</h2>
-            <PillToggle
-              value={String(input.applicants.length) as "1" | "2" | "3" | "4"}
-              onChange={(v) => set("applicants", resize(input.applicants, Number(v), emptyApplicant))}
-              options={[
-                { value: "1", label: "1" },
-                { value: "2", label: "2" },
-                { value: "3", label: "3" },
-                { value: "4", label: "4" },
-              ]}
-            />
+            <div className="text-right">
+              <label className="mb-1 block text-xs font-semibold text-ink-soft">Number of Applicants</label>
+              <PillToggle
+                value={String(input.applicants.length) as "1" | "2" | "3" | "4"}
+                onChange={(v) => set("applicants", resize(input.applicants, Number(v), emptyApplicant))}
+                options={[
+                  { value: "1", label: "1" },
+                  { value: "2", label: "2" },
+                  { value: "3", label: "3" },
+                  { value: "4", label: "4" },
+                ]}
+              />
+            </div>
           </div>
           <div className="mt-4 flex flex-col gap-3">
             {input.applicants.map((applicant, i) => (
@@ -212,13 +217,16 @@ export function FireVaultCalculator() {
         </div>
 
         <div>
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-end justify-between gap-4">
             <h2 className="font-display text-xl font-semibold text-ink">Investment properties</h2>
-            <NumberInput
-              value={input.properties.length}
-              onChange={(v) => set("properties", resize(input.properties, v, emptyProperty))}
-              max={10}
-            />
+            <div className="w-28 text-right">
+              <label className="mb-1 block text-xs font-semibold text-ink-soft">Number of Properties</label>
+              <NumberInput
+                value={input.properties.length}
+                onChange={(v) => set("properties", resize(input.properties, v, emptyProperty))}
+                max={10}
+              />
+            </div>
           </div>
           {input.properties.length > 0 && (
             <div className="mt-4 flex flex-col gap-3">
@@ -242,6 +250,16 @@ export function FireVaultCalculator() {
         <div>
           <h2 className="font-display text-xl font-semibold text-ink">Household expenses</h2>
           <div className="mt-4 flex flex-col gap-5">
+            <FieldGroup label="Location" hint="Used for the HEM benchmark">
+              <PillToggle<HemLocation>
+                value={input.location}
+                onChange={(v) => set("location", v)}
+                options={[
+                  { value: "rest_of_australia", label: "Rest of Australia" },
+                  { value: "remote", label: "Remote" },
+                ]}
+              />
+            </FieldGroup>
             <FieldGroup label="Living expenses" hint="Choose a benchmark or enter your own">
               <PillToggle
                 value={input.useHemBenchmark ? "hem" : "manual"}
@@ -264,13 +282,16 @@ export function FireVaultCalculator() {
         </div>
 
         <div>
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-end justify-between gap-4">
             <h2 className="font-display text-xl font-semibold text-ink">Existing loans</h2>
-            <NumberInput
-              value={input.loans.length}
-              onChange={(v) => set("loans", resize(input.loans, v, emptyLoan))}
-              max={10}
-            />
+            <div className="w-28 text-right">
+              <label className="mb-1 block text-xs font-semibold text-ink-soft">Number of Loans</label>
+              <NumberInput
+                value={input.loans.length}
+                onChange={(v) => set("loans", resize(input.loans, v, emptyLoan))}
+                max={10}
+              />
+            </div>
           </div>
           <p className="mt-1 text-xs text-ink-soft">
             Every loan you enter is combined into one balance for the FIRE Vault comparison below.

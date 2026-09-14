@@ -178,7 +178,7 @@ export function FireVaultGate() {
                 <input
                   id="fv-code"
                   className={`${fieldClasses} text-center text-lg font-semibold uppercase tracking-[0.2em]`}
-                  placeholder="FIRELOANS26"
+                  placeholder="FIRELOANSXX"
                   autoComplete="one-time-code"
                   {...verifyForm.register("code")}
                 />
