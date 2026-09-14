@@ -87,6 +87,83 @@ export function periodsToYearsMonths(periods: number, periodsPerYear: number): {
   return { years: Math.floor(totalMonths / 12), months: totalMonths % 12 };
 }
 
+export type FixedPaymentSchedule = {
+  payoffPeriods: number;
+  payoffTime: { years: number; months: number };
+  totalInterestPaid: number;
+  totalPaid: number;
+  series: BalancePoint[];
+  /** True if `payment` doesn't even cover the first period's interest, so the balance never reduces. */
+  neverPaysOff: boolean;
+};
+
+/**
+ * Schedules a loan paid at a constant, arbitrary `payment` per period (rather than the
+ * payment solved to fully amortize over a given term) — the shape a "redirect 100% of
+ * surplus cash flow to the loan" acceleration product needs, where the payment amount is
+ * an external input (household surplus), not derived from a target payoff term. Capped at
+ * `maxPeriods` (default 40 years' worth) so a too-small payment can't loop indefinitely.
+ */
+export function buildFixedPaymentSchedule(params: {
+  principal: number;
+  annualRatePct: number;
+  periodsPerYear: number;
+  payment: number;
+  maxPeriods?: number;
+}): FixedPaymentSchedule {
+  const { principal, annualRatePct, periodsPerYear, payment, maxPeriods = 40 * periodsPerYear } = params;
+  const r = annualRatePct / 100 / periodsPerYear;
+
+  if (principal <= 0) {
+    return { payoffPeriods: 0, payoffTime: { years: 0, months: 0 }, totalInterestPaid: 0, totalPaid: 0, series: [{ period: 0, year: 0, balance: 0, cumulativePaid: 0 }], neverPaysOff: false };
+  }
+
+  const firstPeriodInterest = principal * r;
+  if (payment <= firstPeriodInterest) {
+    // Payment doesn't even cover interest on day one — balance would grow forever.
+    return {
+      payoffPeriods: maxPeriods,
+      payoffTime: periodsToYearsMonths(maxPeriods, periodsPerYear),
+      totalInterestPaid: NaN,
+      totalPaid: NaN,
+      series: [{ period: 0, year: 0, balance: principal, cumulativePaid: 0 }],
+      neverPaysOff: true,
+    };
+  }
+
+  const series: BalancePoint[] = [{ period: 0, year: 0, balance: principal, cumulativePaid: 0 }];
+  let balance = principal;
+  let cumulativePaid = 0;
+  let period = 0;
+
+  while (balance > 0.005 && period < maxPeriods) {
+    period += 1;
+    const interest = balance * r;
+    const principalPortion = Math.min(balance, payment - interest);
+    const actualPayment = interest + principalPortion;
+    balance = Math.max(0, balance - principalPortion);
+    cumulativePaid += actualPayment;
+
+    // Only checkpoint at the END of a full calendar year (period is an exact multiple of
+    // periodsPerYear), or at the exact moment of payoff   never at the START of a year, which
+    // would record a "year" row after just one period had elapsed.
+    const isYearEnd = period % periodsPerYear === 0;
+    if (isYearEnd || balance === 0) {
+      const year = Math.ceil(period / periodsPerYear);
+      series.push({ period, year, balance, cumulativePaid });
+    }
+  }
+
+  return {
+    payoffPeriods: period,
+    payoffTime: periodsToYearsMonths(period, periodsPerYear),
+    totalInterestPaid: cumulativePaid - principal,
+    totalPaid: cumulativePaid,
+    series,
+    neverPaysOff: false,
+  };
+}
+
 export type ExtraRepaymentPlan = {
   minPayment: number;
   paymentWithExtra: number;

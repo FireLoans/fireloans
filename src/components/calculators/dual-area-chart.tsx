@@ -1,18 +1,45 @@
+"use client";
+
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+
 type Point = { x: number; y: number };
 type Series = { label: string; color: string; points: Point[] };
 
-/** Overlays up to two balance-over-time series (e.g. with vs. without extra repayments) on one chart, with a colour-coded legend. */
+/** Linear interpolation of a series' y-value at an arbitrary x, clamped to the series' own domain. */
+function interpolateY(points: Point[], x: number): number {
+  if (points.length === 0) return 0;
+  if (x <= points[0].x) return points[0].y;
+  const last = points[points.length - 1];
+  if (x >= last.x) return last.y;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (x >= a.x && x <= b.x) {
+      const t = (x - a.x) / (b.x - a.x || 1);
+      return a.y + (b.y - a.y) * t;
+    }
+  }
+  return last.y;
+}
+
+/** Overlays up to two balance-over-time series (e.g. with vs. without extra repayments) on one chart, with a colour-coded legend and an interactive hover tooltip showing each series' value at the hovered point in time. */
 export function DualAreaChart({
   series,
   height = 200,
   formatX,
   formatY,
+  theme = "dark",
 }: {
   series: Series[];
   height?: number;
   formatX?: (x: number) => string;
   formatY?: (y: number) => string;
+  /** "dark" (default) assumes a dark card background (e.g. the sticky results panel); "light" is for placing the chart on a paper/white card instead. Only affects the legend text colour. */
+  theme?: "dark" | "light";
 }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverX, setHoverX] = useState<number | null>(null);
+
   const longest = series.reduce((a, b) => (b.points.length > a.points.length ? b : a), series[0]);
   if (!longest || longest.points.length < 2) return null;
 
@@ -32,9 +59,29 @@ export function DualAreaChart({
   const yTicks = [0, 0.5, 1].map((f) => f * maxY);
   const xTicks = [0, Math.round(maxX / 2), maxX];
 
+  function handleMouseMove(e: ReactMouseEvent<SVGSVGElement>) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const svgX = ((e.clientX - rect.left) / rect.width) * width;
+    const dataX = ((svgX - padding.left) / innerW) * maxX;
+    setHoverX(Math.max(0, Math.min(maxX, Math.round(dataX))));
+  }
+
+  const hoverEntries = hoverX === null ? null : series.map((s) => ({ series: s, y: interpolateY(s.points, hoverX) }));
+  const tooltipLeftPct = hoverX === null ? 0 : (toSvgX(hoverX) / width) * 100;
+
   return (
-    <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" preserveAspectRatio="none">
+    <div className="relative">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full cursor-crosshair"
+        preserveAspectRatio="none"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverX(null)}
+      >
         <defs>
           {series.map((s) => (
             <linearGradient key={s.label} id={`dual-chart-${s.color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
@@ -86,12 +133,61 @@ export function DualAreaChart({
             {formatY(maxY)}
           </text>
         )}
+
+        {hoverEntries && hoverX !== null && (
+          <g>
+            <line
+              x1={toSvgX(hoverX)}
+              x2={toSvgX(hoverX)}
+              y1={padding.top}
+              y2={padding.top + innerH}
+              stroke="currentColor"
+              strokeOpacity={0.3}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+            />
+            {hoverEntries.map(({ series: s, y }) => (
+              <circle
+                key={s.label}
+                cx={toSvgX(hoverX)}
+                cy={toSvgY(y)}
+                r={4}
+                fill={s.color}
+                stroke="white"
+                strokeWidth={1.5}
+              />
+            ))}
+          </g>
+        )}
       </svg>
+
+      {hoverEntries && hoverX !== null && (
+        <div
+          className="pointer-events-none absolute top-1 z-10 min-w-[9rem] -translate-x-1/2 rounded-lg border border-border bg-paper px-3 py-2 text-xs shadow-lg"
+          style={{ left: `${Math.min(85, Math.max(15, tooltipLeftPct))}%` }}
+        >
+          <p className="font-semibold text-ink">{formatX ? formatX(hoverX) : hoverX}</p>
+          <div className="mt-1 flex flex-col gap-0.5">
+            {hoverEntries.map(({ series: s, y }) => (
+              <div key={s.label} className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-ink-soft">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: s.color }} aria-hidden="true" />
+                  {s.label}
+                </span>
+                <span className="font-semibold text-ink">{formatY ? formatY(y) : y.toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {series.length > 1 && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
           {series.map((s) => (
-            <span key={s.label} className="flex items-center gap-1.5 text-xs text-cream/60">
+            <span
+              key={s.label}
+              className={`flex items-center gap-1.5 text-xs ${theme === "light" ? "text-ink-soft" : "text-cream/60"}`}
+            >
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} aria-hidden="true" />
               {s.label}
             </span>

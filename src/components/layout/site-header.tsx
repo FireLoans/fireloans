@@ -98,6 +98,13 @@ export function SiteHeader() {
           >
             Calculator
           </Link>
+
+          <Link
+            href="/fire-vault"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-soft transition-colors hover:text-brand-600"
+          >
+            FIRE Vault
+          </Link>
         </nav>
 
         <div className="hidden lg:block">
@@ -172,6 +179,14 @@ export function SiteHeader() {
               onClick={() => setMobileOpen(false)}
             >
               Calculator
+            </Link>
+
+            <Link
+              href="/fire-vault"
+              className="rounded-lg px-3 py-2.5 text-base font-medium text-ink-soft hover:bg-brand-50 hover:text-brand-700"
+              onClick={() => setMobileOpen(false)}
+            >
+              FIRE Vault
             </Link>
 
             <Link

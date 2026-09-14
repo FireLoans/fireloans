@@ -6,7 +6,7 @@ import { getHemMonthly } from "./hem-table";
 // 14% from 1 July 2027   update again when this site is still live then).
 // Cross-checked cell-for-cell against a major lender's own broker
 // serviceability workbook (References!B14:D19, "effective 17/07/2026")   identical.
-const TAX_BRACKETS_2026_27 = [
+export const TAX_BRACKETS_2026_27 = [
   { upTo: 18200, base: 0, rate: 0 },
   { upTo: 45000, base: 0, rate: 0.15 },
   { upTo: 135000, base: 4020, rate: 0.3 },
@@ -14,7 +14,7 @@ const TAX_BRACKETS_2026_27 = [
   { upTo: Infinity, base: 51370, rate: 0.45 },
 ];
 
-const MEDICARE_LEVY_RATE = 0.02;
+export const MEDICARE_LEVY_RATE = 0.02;
 
 /** Rough resident income tax + 2% Medicare levy estimate   for illustration only. */
 export function estimateAnnualNetIncome(gross: number): number {
@@ -26,6 +26,20 @@ export function estimateAnnualNetIncome(gross: number): number {
   const tax = bracket.base + (gross - prevCap) * bracket.rate;
   const medicare = gross * MEDICARE_LEVY_RATE;
   return Math.max(0, gross - tax - medicare);
+}
+
+/**
+ * The marginal rate that applies at the TOP of `gross`'s own bracket (income tax only,
+ * excluding Medicare). Used to shade a second income stream (e.g. bonus/rental) at the
+ * rate it would actually be taxed at on top of a base income, without re-running the
+ * whole progressive calculation from zero for every combined dollar.
+ */
+export function marginalTaxRateFor(gross: number): number {
+  if (gross <= 0) return 0;
+  const bracket =
+    TAX_BRACKETS_2026_27.find((b, i) => gross <= b.upTo || i === TAX_BRACKETS_2026_27.length - 1) ??
+    TAX_BRACKETS_2026_27[0];
+  return bracket.rate;
 }
 
 export type Frequency = "weekly" | "fortnightly" | "monthly" | "annually";

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:calculators": "node --experimental-strip-types --experimental-loader ./scripts/ts-resolve-loader.mjs scripts/test-calculators.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -15,6 +16,7 @@
     "gray-matter": "^4.0.3",
     "next": "16.3.4",
     "next-mdx-remote": "^6.0.0",
+    "nodemailer": "^10.0.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.87.0",
@@ -25,6 +27,7 @@
     "@tailwindcss/postcss": "^4",
     "@tailwindcss/typography": "^0.5.20",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
