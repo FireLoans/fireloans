@@ -1,13 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { FIRE_VAULT_PASSCODE, sendCodeSchema } from "@/lib/fire-vault/schema";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
-
-// Same verified sending domain as the contact form (src/app/api/contact/route.ts) — Resend
-// requires fireloans.com.au to be verified in the dashboard before sending as this address.
-const FROM_ADDRESS = "Fire Loans <noreply@fireloans.com.au>";
 
 function escapeHtml(value: string): string {
   return value
@@ -54,19 +50,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Sent via Resend, same as the contact form   Gmail SMTP was dropped here (see git history)
-  // because sending consumer Gmail from Vercel's serverless/datacenter IPs gets intermittently
-  // rate-limited or blocked by Google's abuse detection, which was failing some customers'
-  // requests in production while others went through fine.
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.error("FIRE Vault send-code requested but RESEND_API_KEY is not configured   email not sent.", {
+  // Sent via Gmail SMTP (not Resend, which the rest of the site's contact form uses) — requires a
+  // Gmail account with 2-Step Verification on and an App Password generated for it (a normal Gmail
+  // password is rejected by Google's SMTP servers). See .env.example for setup notes.
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailUser || !gmailAppPassword) {
+    console.error("FIRE Vault send-code requested but GMAIL_USER/GMAIL_APP_PASSWORD are not configured — email not sent.", {
       name: data.name,
       email: data.email,
     });
     // Dev-only convenience: with no real mailbox connected yet, surface the code directly in the
     // response instead of a dead-end error, so the gate is still testable end-to-end locally.
-    // Never done in production   a live site with no mail configured must fail loudly, not leak
+    // Never done in production — a live site with no mail configured must fail loudly, not leak
     // the passcode to anyone who asks.
     if (process.env.NODE_ENV !== "production") {
       return NextResponse.json({
@@ -81,9 +77,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const resend = new Resend(apiKey);
-    const { error } = await resend.emails.send({
-      from: FROM_ADDRESS,
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: gmailUser, pass: gmailAppPassword },
+    });
+
+    await transporter.sendMail({
+      from: `Fire Loans <${gmailUser}>`,
       to: data.email,
       subject: "Your FIRE Vault access code",
       html: `
@@ -97,20 +97,12 @@ export async function POST(req: NextRequest) {
       `,
     });
 
-    if (error) {
-      console.error("Resend failed to send FIRE Vault access code:", error);
-      return NextResponse.json(
-        { error: "We couldn't send that right now. Please call 0478 933 786 or email broker@fireloans.com.au." },
-        { status: 502 }
-      );
-    }
-
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Unexpected error sending FIRE Vault access code:", err);
+    console.error("Gmail SMTP failed to send FIRE Vault access code:", err);
     return NextResponse.json(
       { error: "We couldn't send that right now. Please call 0478 933 786 or email broker@fireloans.com.au." },
-      { status: 500 }
+      { status: 502 }
     );
   }
 }
