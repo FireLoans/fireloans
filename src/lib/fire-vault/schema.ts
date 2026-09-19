@@ -29,7 +29,7 @@ export type VerifyCodeValues = z.infer<typeof verifyCodeSchema>;
  * schema only validates the calculator snapshot itself.
  */
 const applicantSnapshotSchema = z.object({ grossSalary: z.number(), additionalIncome: z.number() });
-const propertySnapshotSchema = z.object({ weeklyRent: z.number(), monthlyExpenses: z.number() });
+const rentalIncomeSnapshotSchema = z.object({ grossAnnualRent: z.number() });
 const loanSnapshotSchema = z.object({
   balance: z.number(),
   ratePct: z.number(),
@@ -37,25 +37,29 @@ const loanSnapshotSchema = z.object({
   termMonths: z.number(),
   monthlyRepayment: z.number(),
 });
+const investmentLoanSnapshotSchema = loanSnapshotSchema.extend({
+  repaymentType: z.enum(["interest_only", "principal_and_interest"]),
+});
 
 export const leadSnapshotSchema = z.object({
   input: z.object({
     applicants: z.array(applicantSnapshotSchema).min(1).max(4),
-    properties: z.array(propertySnapshotSchema).max(10),
+    rentalIncomes: z.array(rentalIncomeSnapshotSchema).max(10),
     dependents: z.number(),
     location: z.enum(["rest_of_australia", "remote"]),
     useHemBenchmark: z.boolean(),
     manualMonthlyExpenses: z.number(),
-    loans: z.array(loanSnapshotSchema).max(10),
+    ownerOccupiedLoans: z.array(loanSnapshotSchema).max(10),
+    investmentLoans: z.array(investmentLoanSnapshotSchema).max(10),
+    fireLoan: loanSnapshotSchema,
     carLoanMonthly: z.number(),
     personalLoanMonthly: z.number(),
-    creditCardLimit: z.number(),
-    fireVaultRatePct: z.number(),
   }),
   summary: z.object({
     totalGrossAnnualIncome: z.number(),
     totalNetMonthlyIncome: z.number(),
-    combinedLoanBalance: z.number(),
+    existingLoanBalance: z.number(),
+    fireLoanBalance: z.number(),
     monthlySurplus: z.number(),
     currentPayoffLabel: z.string().max(100),
     acceleratedPayoffLabel: z.string().max(100),

@@ -24,23 +24,26 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
     )
     .join("");
 
-  const propertiesRows = input.properties.length
-    ? input.properties
-        .map(
-          (p, i) =>
-            `<tr><td>Property #${i + 1}</td><td>${formatCurrency(p.weeklyRent)}/week</td><td>${formatCurrency(p.monthlyExpenses)}/month expenses</td></tr>`
-        )
+  const rentalIncomeRows = input.rentalIncomes.length
+    ? input.rentalIncomes
+        .map((r, i) => `<tr><td>Rental income #${i + 1}</td><td>${formatCurrency(r.grossAnnualRent)}/year</td></tr>`)
         .join("")
-    : "<tr><td colspan=\"3\">None entered</td></tr>";
+    : "<tr><td colspan=\"2\">None entered</td></tr>";
 
-  const loansRows = input.loans.length
-    ? input.loans
-        .map(
-          (l, i) =>
-            `<tr><td>Loan #${i + 1}</td><td>${formatCurrency(l.balance)}</td><td>${l.ratePct}%</td><td>${l.termYears}y ${l.termMonths}m left</td><td>${formatCurrency(l.monthlyRepayment)}/mo</td></tr>`
-        )
+  const loanRow = (l: { balance: number; ratePct: number; termYears: number; termMonths: number; monthlyRepayment: number }, label: string, extra?: string) =>
+    `<tr><td>${label}</td><td>${formatCurrency(l.balance)}</td><td>${l.ratePct}%</td><td>${l.termYears}y ${l.termMonths}m left</td><td>${formatCurrency(l.monthlyRepayment)}/mo</td><td>${extra ?? ""}</td></tr>`;
+
+  const ownerOccupiedRows = input.ownerOccupiedLoans.length
+    ? input.ownerOccupiedLoans.map((l, i) => loanRow(l, `Loan #${i + 1}`)).join("")
+    : "<tr><td colspan=\"6\">None entered</td></tr>";
+
+  const investmentLoanRows = input.investmentLoans.length
+    ? input.investmentLoans
+        .map((l, i) => loanRow(l, `Loan #${i + 1}`, l.repaymentType === "interest_only" ? "Interest Only" : "P&I"))
         .join("")
-    : "<tr><td colspan=\"5\">None entered</td></tr>";
+    : "<tr><td colspan=\"6\">None entered</td></tr>";
+
+  const fireLoanRow = loanRow(input.fireLoan, "Fire Loan");
 
   return `
     <h2>FIRE Vault results — ${escapeHtml(name)}</h2>
@@ -51,9 +54,10 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
     <h3>Summary</h3>
     <p><strong>Total gross annual income:</strong> ${formatCurrency(summary.totalGrossAnnualIncome)}</p>
     <p><strong>Total net monthly income:</strong> ${formatCurrency(summary.totalNetMonthlyIncome)}</p>
-    <p><strong>Combined loan balance:</strong> ${formatCurrency(summary.combinedLoanBalance)}</p>
+    <p><strong>Existing loan balance:</strong> ${formatCurrency(summary.existingLoanBalance)}</p>
+    <p><strong>Fire loan balance:</strong> ${formatCurrency(summary.fireLoanBalance)}</p>
     <p><strong>Monthly surplus:</strong> ${formatCurrency(summary.monthlySurplus)}</p>
-    <p><strong>FIRE Vault rate used:</strong> ${input.fireVaultRatePct}%</p>
+    <p><strong>Fire loan rate:</strong> ${input.fireLoan.ratePct}%</p>
     ${
       summary.neverPaysOff
         ? "<p><strong>Result:</strong> Surplus doesn't cover interest at this rate — not a viable payoff path as entered.</p>"
@@ -63,13 +67,17 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
     }
     <h3>Applicants</h3>
     <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${applicantsRows}</table>
-    <h3>Investment properties</h3>
-    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${propertiesRows}</table>
-    <h3>Existing loans</h3>
-    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${loansRows}</table>
-    <p><strong>Dependents:</strong> ${input.dependents} &middot; <strong>Location:</strong> ${input.location === "remote" ? "Remote" : "Rest of Australia"}</p>
+    <h3>Rental income</h3>
+    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${rentalIncomeRows}</table>
+    <h3>Existing owner occupied home loan</h3>
+    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${ownerOccupiedRows}</table>
+    <h3>Fire loan</h3>
+    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${fireLoanRow}</table>
+    <h3>Existing investment home loan</h3>
+    <table cellpadding="4" cellspacing="0" border="1" style="border-collapse:collapse;">${investmentLoanRows}</table>
+    <p><strong>Dependents:</strong> ${input.dependents} &middot; <strong>Location:</strong> ${input.location === "remote" ? "Regional Cities" : "Capital Cities"}</p>
     <p><strong>Living expenses:</strong> ${input.useHemBenchmark ? "HEM benchmark" : formatCurrency(input.manualMonthlyExpenses) + "/mo (manual)"}</p>
-    <p><strong>Car loan:</strong> ${formatCurrency(input.carLoanMonthly)}/mo &middot; <strong>Personal loan:</strong> ${formatCurrency(input.personalLoanMonthly)}/mo &middot; <strong>Credit card limit:</strong> ${formatCurrency(input.creditCardLimit)}</p>
+    <p><strong>Car loan:</strong> ${formatCurrency(input.carLoanMonthly)}/mo &middot; <strong>Personal loan:</strong> ${formatCurrency(input.personalLoanMonthly)}/mo</p>
     <hr />
     <p style="color:#888;font-size:12px;">Captured automatically when they finished using the FIRE Vault calculator. Figures are estimates only.</p>
   `;

@@ -5,7 +5,6 @@ import {
   type FixedPaymentSchedule,
 } from "./amortization";
 import {
-  CREDIT_CARD_ASSESSMENT_RATE,
   MEDICARE_LEVY_RATE,
   OTHER_INCOME_SHADING,
   estimateAnnualNetIncome,
@@ -17,28 +16,23 @@ import { getHemMonthlyByLocation, type HemLocation } from "./hem-table";
  * FIRE Vault is the site's own version of the "redirect 100% of household surplus at an
  * accelerated rate" comparison popularised by products like Infinity's Rapid Repay — reverse
  * engineered live against rapidpay.infinity.com.au, then generalised well beyond its single
- * applicant/single loan model: up to 4 applicants, up to 10 investment properties (with their
- * own rental income + expenses), and up to 10 existing loans blended into one combined payoff
- * comparison, all on the site's own (newer, already-verified) 2026-27 tax brackets and
- * income-banded HEM table rather than RapidPay's flat regional figure.
+ * applicant/single loan model: up to 4 applicants, rental income entries, and existing loans
+ * split into owner-occupied / investment / the single proposed FIRE loan, all on the site's own
+ * (newer, already-verified) 2026-27 tax brackets and income-banded HEM table rather than
+ * RapidPay's flat regional figure.
  */
 
-export type Applicant = {
-  grossSalary: number; // annual
-  additionalIncome: number; // annual   bonus/overtime/commission
-};
+export type Applicant = { grossSalary: number; additionalIncome: number };
 
 export function emptyApplicant(): Applicant {
   return { grossSalary: 0, additionalIncome: 0 };
 }
 
-export type InvestmentProperty = {
-  weeklyRent: number;
-  monthlyExpenses: number;
-};
+/** A single rental income line — a flat gross annual figure, not derived from a per-property rent/expenses split. */
+export type RentalIncome = { grossAnnualRent: number };
 
-export function emptyProperty(): InvestmentProperty {
-  return { weeklyRent: 0, monthlyExpenses: 0 };
+export function emptyRentalIncome(): RentalIncome {
+  return { grossAnnualRent: 0 };
 }
 
 export type ExistingLoan = {
@@ -53,31 +47,43 @@ export function emptyLoan(): ExistingLoan {
   return { balance: 0, ratePct: 0, termYears: 0, termMonths: 0, monthlyRepayment: 0 };
 }
 
+export type RepaymentType = "interest_only" | "principal_and_interest";
+
+/** An investment loan carries the same fields as any other existing loan, plus its repayment basis. */
+export type InvestmentLoan = ExistingLoan & { repaymentType: RepaymentType };
+
+export function emptyInvestmentLoan(): InvestmentLoan {
+  return { ...emptyLoan(), repaymentType: "principal_and_interest" };
+}
+
 export type FireVaultInput = {
   applicants: Applicant[]; // 1-4
-  properties: InvestmentProperty[]; // 0-10
+  rentalIncomes: RentalIncome[]; // 0-10
+
   dependents: number;
   location: HemLocation;
   useHemBenchmark: boolean;
   manualMonthlyExpenses: number;
-  loans: ExistingLoan[]; // 0-10
+
+  // Existing facilities being refinanced/consolidated — used for the "current path" baseline.
+  ownerOccupiedLoans: ExistingLoan[]; // 0-10
+  investmentLoans: InvestmentLoan[]; // 0-10
+  // The single new consolidated loan being proposed — the "accelerated path" runs against this.
+  fireLoan: ExistingLoan;
+
   carLoanMonthly: number;
   personalLoanMonthly: number;
-  creditCardLimit: number;
-  fireVaultRatePct: number;
 };
 
-/** Per-applicant tax breakdown, surfaced as a transparency table   RapidPay only ever shows combined totals. */
+/** Per-applicant tax breakdown, surfaced as a transparency table — RapidPay only ever shows combined totals. */
 export type ApplicantBreakdown = {
   grossSalary: number;
   additionalIncome: number;
   netAnnual: number;
 };
 
-export type PropertyBreakdown = {
-  weeklyRent: number;
-  annualRent: number;
-  monthlyExpenses: number;
+export type RentalIncomeBreakdown = {
+  grossAnnualRent: number;
 };
 
 export type ScheduleRow = {
@@ -105,17 +111,17 @@ export type FireVaultResult = {
   totalGrossAnnualIncome: number;
   totalNetMonthlyIncome: number;
   applicantBreakdown: ApplicantBreakdown[];
-  propertyBreakdown: PropertyBreakdown[];
+  rentalIncomeBreakdown: RentalIncomeBreakdown[];
 
   hemMonthlyBenchmark: number;
   assessedMonthlyExpenses: number;
-  propertyExpensesMonthly: number;
   additionalRepaymentsMonthly: number;
   monthlySurplus: number;
 
-  combinedLoanBalance: number;
-  weightedCurrentRatePct: number;
-  combinedCurrentMonthlyRepayment: number;
+  existingLoanBalance: number;
+  weightedExistingRatePct: number;
+  existingLoanMonthlyRepayment: number;
+  fireLoanBalance: number;
 
   currentPath: LoanPath;
   acceleratedPath: LoanPath;
@@ -125,10 +131,9 @@ export type FireVaultResult = {
 
   netServiceabilityRatio: number | null;
   loanToIncome: number | null;
-  debtToIncome: number | null;
 };
 
-/** Bonus/overtime is taxed at the marginal rate that applies at the TOP of the base salary's own bracket, plus Medicare   the exact mechanic reverse-engineered from RapidPay's live output, layered on this site's own (newer) tax brackets. */
+/** Bonus/overtime is taxed at the marginal rate that applies at the TOP of the base salary's own bracket, plus Medicare — the exact mechanic reverse-engineered from RapidPay's live output, layered on this site's own (newer) tax brackets. */
 function netAdditionalIncome(baseSalary: number, additionalIncome: number): number {
   if (additionalIncome <= 0) return 0;
   const rate = marginalTaxRateFor(baseSalary) + MEDICARE_LEVY_RATE;
@@ -177,58 +182,58 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     netAnnual: estimateAnnualNetIncome(a.grossSalary) + netAdditionalIncome(a.grossSalary, a.additionalIncome),
   }));
 
-  const propertyBreakdown: PropertyBreakdown[] = input.properties.map((p) => ({
-    weeklyRent: p.weeklyRent,
-    annualRent: p.weeklyRent * 52,
-    monthlyExpenses: p.monthlyExpenses,
+  const rentalIncomeBreakdown: RentalIncomeBreakdown[] = input.rentalIncomes.map((r) => ({
+    grossAnnualRent: r.grossAnnualRent,
   }));
 
-  const totalGrossAnnualIncome =
-    applicantBreakdown.reduce((sum, a) => sum + a.grossSalary + a.additionalIncome, 0) +
-    propertyBreakdown.reduce((sum, p) => sum + p.annualRent, 0);
+  // Kept separate from totalGrossAnnualIncome below: the HEM lookup must be based on applicant
+  // (salary) income only. Folding rental income into that lookup was a confirmed bug — it
+  // inflated the benchmark, since HEM measures a household's own living costs, not income earned
+  // from an investment property.
+  const salaryGrossAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.grossSalary + a.additionalIncome, 0);
+  const totalRentalAnnual = rentalIncomeBreakdown.reduce((sum, r) => sum + r.grossAnnualRent, 0);
+  const totalGrossAnnualIncome = salaryGrossAnnualIncome + totalRentalAnnual;
 
-  const totalRentalAnnual = propertyBreakdown.reduce((sum, p) => sum + p.annualRent, 0);
   const netRentalAnnual = estimateAnnualNetIncome(totalRentalAnnual * OTHER_INCOME_SHADING);
-
   const totalNetAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.netAnnual, 0) + netRentalAnnual;
   const totalNetMonthlyIncome = totalNetAnnualIncome / 12;
 
   const isJoint = input.applicants.length >= 2;
-  const hemMonthlyBenchmark = getHemMonthlyByLocation(isJoint, input.location, input.dependents, totalGrossAnnualIncome);
+  const hemMonthlyBenchmark = getHemMonthlyByLocation(isJoint, input.location, input.dependents, salaryGrossAnnualIncome);
   // Mirrors RapidPay's own "Update HEM?" toggle behaviour: locked to the benchmark, or a
-  // straight manual override   not floored, unlike the site's own Borrowing Power calculator.
+  // straight manual override — not floored, unlike the site's own Borrowing Power calculator.
   const assessedMonthlyExpenses = input.useHemBenchmark ? hemMonthlyBenchmark : input.manualMonthlyExpenses;
 
-  const propertyExpensesMonthly = input.properties.reduce((sum, p) => sum + p.monthlyExpenses, 0);
-  const additionalRepaymentsMonthly =
-    input.carLoanMonthly + input.personalLoanMonthly + input.creditCardLimit * CREDIT_CARD_ASSESSMENT_RATE;
+  const additionalRepaymentsMonthly = input.carLoanMonthly + input.personalLoanMonthly;
+  const monthlySurplus = totalNetMonthlyIncome - assessedMonthlyExpenses - additionalRepaymentsMonthly;
 
-  const monthlySurplus =
-    totalNetMonthlyIncome - assessedMonthlyExpenses - propertyExpensesMonthly - additionalRepaymentsMonthly;
-
-  const combinedLoanBalance = input.loans.reduce((sum, l) => sum + l.balance, 0);
-  const combinedCurrentMonthlyRepayment = input.loans.reduce((sum, l) => sum + l.monthlyRepayment, 0);
-  const weightedCurrentRatePct =
-    combinedLoanBalance > 0 ? input.loans.reduce((sum, l) => sum + l.balance * l.ratePct, 0) / combinedLoanBalance : 0;
+  // The "current path" baseline: what happens if nothing is refinanced and existing loans keep
+  // being paid at their own declared balance/rate/repayment.
+  const existingLoans: ExistingLoan[] = [...input.ownerOccupiedLoans, ...input.investmentLoans];
+  const existingLoanBalance = existingLoans.reduce((sum, l) => sum + l.balance, 0);
+  const existingLoanMonthlyRepayment = existingLoans.reduce((sum, l) => sum + l.monthlyRepayment, 0);
+  const weightedExistingRatePct =
+    existingLoanBalance > 0 ? existingLoans.reduce((sum, l) => sum + l.balance * l.ratePct, 0) / existingLoanBalance : 0;
 
   const currentSchedule = buildFixedPaymentSchedule({
-    principal: combinedLoanBalance,
-    annualRatePct: weightedCurrentRatePct,
+    principal: existingLoanBalance,
+    annualRatePct: weightedExistingRatePct,
     periodsPerYear: 12,
-    payment: combinedCurrentMonthlyRepayment,
+    payment: existingLoanMonthlyRepayment,
   });
+  // The "accelerated path": the single proposed FIRE loan, with the full household surplus
+  // redirected against it every month instead of just its own minimum repayment.
   const acceleratedSchedule = buildFixedPaymentSchedule({
-    principal: combinedLoanBalance,
-    annualRatePct: input.fireVaultRatePct,
+    principal: input.fireLoan.balance,
+    annualRatePct: input.fireLoan.ratePct,
     periodsPerYear: 12,
     payment: Math.max(0, monthlySurplus),
   });
 
-  const totalOutgoingsMonthly =
-    assessedMonthlyExpenses + propertyExpensesMonthly + additionalRepaymentsMonthly + combinedCurrentMonthlyRepayment;
+  const totalOutgoingsMonthly = assessedMonthlyExpenses + additionalRepaymentsMonthly + existingLoanMonthlyRepayment;
 
-  const currentPath = toLoanPath(currentSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, weightedCurrentRatePct);
-  const acceleratedPath = toLoanPath(acceleratedSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, input.fireVaultRatePct);
+  const currentPath = toLoanPath(currentSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, weightedExistingRatePct);
+  const acceleratedPath = toLoanPath(acceleratedSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, input.fireLoan.ratePct);
 
   const interestSaved =
     currentPath.neverPaysOff || acceleratedPath.neverPaysOff
@@ -244,23 +249,21 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     totalGrossAnnualIncome,
     totalNetMonthlyIncome,
     applicantBreakdown,
-    propertyBreakdown,
+    rentalIncomeBreakdown,
     hemMonthlyBenchmark,
     assessedMonthlyExpenses,
-    propertyExpensesMonthly,
     additionalRepaymentsMonthly,
     monthlySurplus,
-    combinedLoanBalance,
-    weightedCurrentRatePct,
-    combinedCurrentMonthlyRepayment,
+    existingLoanBalance,
+    weightedExistingRatePct,
+    existingLoanMonthlyRepayment,
+    fireLoanBalance: input.fireLoan.balance,
     currentPath,
     acceleratedPath,
     interestSaved,
     timeSavedMonths,
     netServiceabilityRatio: totalOutgoingsMonthly > 0 ? totalNetMonthlyIncome / totalOutgoingsMonthly : null,
-    loanToIncome: totalGrossAnnualIncome > 0 ? combinedLoanBalance / totalGrossAnnualIncome : null,
-    debtToIncome:
-      totalGrossAnnualIncome > 0 ? (combinedLoanBalance + input.creditCardLimit) / totalGrossAnnualIncome : null,
+    loanToIncome: totalGrossAnnualIncome > 0 ? existingLoanBalance / totalGrossAnnualIncome : null,
   };
 }
 
