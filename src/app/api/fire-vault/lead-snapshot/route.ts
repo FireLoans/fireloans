@@ -3,6 +3,7 @@ import { leadSnapshotSchema, type LeadSnapshotValues } from "@/lib/fire-vault/sc
 import { checkRateLimit } from "@/lib/rate-limit";
 import { FIRE_VAULT_COOKIE_NAME, verifySessionCookie } from "@/lib/fire-vault/session";
 import { escapeHtml, FIRE_VAULT_BROKER_RECIPIENT, sendFireVaultNotification } from "@/lib/fire-vault/mailer";
+import { computeInvestmentLoanRepayment, computeLoanRepayment } from "@/lib/calculators/fire-vault";
 
 export const runtime = "nodejs";
 
@@ -26,24 +27,29 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
 
   const rentalIncomeRows = input.rentalIncomes.length
     ? input.rentalIncomes
-        .map((r, i) => `<tr><td>Rental income #${i + 1}</td><td>${formatCurrency(r.grossAnnualRent)}/year</td></tr>`)
+        .map((r, i) => `<tr><td>Rental income #${i + 1}</td><td>${formatCurrency(r.weeklyRent)}/week</td></tr>`)
         .join("")
     : "<tr><td colspan=\"2\">None entered</td></tr>";
 
-  const loanRow = (l: { balance: number; ratePct: number; termYears: number; termMonths: number; monthlyRepayment: number }, label: string, extra?: string) =>
-    `<tr><td>${label}</td><td>${formatCurrency(l.balance)}</td><td>${l.ratePct}%</td><td>${l.termYears}y ${l.termMonths}m left</td><td>${formatCurrency(l.monthlyRepayment)}/mo</td><td>${extra ?? ""}</td></tr>`;
+  // Owner-occupied repayments are whatever the customer declared; Fire Loan and investment loan
+  // repayments are auto-calculated from balance/rate/term (not collected from the form anymore),
+  // so they're recomputed here rather than trusted from the payload.
+  const loanRow = (l: { balance: number; ratePct: number; termYears: number; termMonths: number }, label: string, repayment: number, extra?: string) =>
+    `<tr><td>${label}</td><td>${formatCurrency(l.balance)}</td><td>${l.ratePct}%</td><td>${l.termYears}y ${l.termMonths}m left</td><td>${formatCurrency(repayment)}/mo</td><td>${extra ?? ""}</td></tr>`;
 
   const ownerOccupiedRows = input.ownerOccupiedLoans.length
-    ? input.ownerOccupiedLoans.map((l, i) => loanRow(l, `Loan #${i + 1}`)).join("")
+    ? input.ownerOccupiedLoans.map((l, i) => loanRow(l, `Loan #${i + 1}`, l.monthlyRepayment)).join("")
     : "<tr><td colspan=\"6\">None entered</td></tr>";
 
   const investmentLoanRows = input.investmentLoans.length
     ? input.investmentLoans
-        .map((l, i) => loanRow(l, `Loan #${i + 1}`, l.repaymentType === "interest_only" ? "Interest Only" : "P&I"))
+        .map((l, i) =>
+          loanRow(l, `Loan #${i + 1}`, computeInvestmentLoanRepayment(l), l.repaymentType === "interest_only" ? "Interest Only" : "P&I")
+        )
         .join("")
     : "<tr><td colspan=\"6\">None entered</td></tr>";
 
-  const fireLoanRow = loanRow(input.fireLoan, "Fire Loan");
+  const fireLoanRow = loanRow(input.fireLoan, "Fire Loan", computeLoanRepayment(input.fireLoan));
 
   return `
     <h2>FIRE Vault results — ${escapeHtml(name)}</h2>

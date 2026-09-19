@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calculateFireVault,
+  computeInvestmentLoanRepayment,
+  computeLoanRepayment,
   emptyApplicant,
   emptyInvestmentLoan,
   emptyLoan,
@@ -107,11 +109,11 @@ function RentalIncomeFields({
 }) {
   return (
     <div className="rounded-xl border border-border p-4">
-      <FieldGroup label={`Rental income #${index + 1}`} hint={formatCurrency2(rentalIncome.grossAnnualRent / 12) + " / month gross"}>
-        <CurrencyInput
-          value={rentalIncome.grossAnnualRent}
-          onChange={(v) => onChange({ ...rentalIncome, grossAnnualRent: v })}
-        />
+      <FieldGroup
+        label={`Rental income #${index + 1} (per week)`}
+        hint={formatCurrency2((rentalIncome.weeklyRent * 52) / 12) + " / month gross"}
+      >
+        <CurrencyInput value={rentalIncome.weeklyRent} onChange={(v) => onChange({ ...rentalIncome, weeklyRent: v })} />
       </FieldGroup>
     </div>
   );
@@ -152,6 +154,50 @@ function LoanFields({
             value={loan.monthlyRepayment}
             onChange={(v) => onChange({ ...loan, monthlyRepayment: v })}
           />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Read-only stand-in for a repayment field that's auto-calculated from balance/rate/term rather
+ *  than typed in — same visual weight as CurrencyInput, so it still reads as "the repayment", just
+ *  not editable. */
+function AutoRepaymentDisplay({ value }: { value: number }) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-soft">$</span>
+      <div className="flex h-12 w-full items-center rounded-xl border border-border bg-cream-muted pl-7 pr-4 text-sm font-semibold text-ink">
+        {value.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+      </div>
+    </div>
+  );
+}
+
+function FireLoanFields({ loan, onChange }: { loan: ExistingLoan; onChange: (next: ExistingLoan) => void }) {
+  return (
+    <div className="rounded-xl border border-border p-4">
+      <p className="mb-3 text-sm font-semibold text-ink">Loan #1</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Balance</label>
+          <CurrencyInput value={loan.balance} onChange={(v) => onChange({ ...loan, balance: v })} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Rate</label>
+          <PercentInput value={loan.ratePct} onChange={(v) => onChange({ ...loan, ratePct: v })} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Term (years)</label>
+          <NumberInput value={loan.termYears} onChange={(v) => onChange({ ...loan, termYears: v })} suffix="yrs" max={40} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Term (months)</label>
+          <NumberInput value={loan.termMonths} onChange={(v) => onChange({ ...loan, termMonths: v })} suffix="mo" max={11} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Repayment (auto)</label>
+          <AutoRepaymentDisplay value={computeLoanRepayment(loan)} />
         </div>
       </div>
     </div>
@@ -199,8 +245,8 @@ function InvestmentLoanFields({
         </div>
       </div>
       <div className="mt-3">
-        <label className="mb-1 block text-xs text-ink-soft">Repayment</label>
-        <CurrencyInput value={loan.monthlyRepayment} onChange={(v) => onChange({ ...loan, monthlyRepayment: v })} />
+        <label className="mb-1 block text-xs text-ink-soft">Repayment (auto)</label>
+        <AutoRepaymentDisplay value={computeInvestmentLoanRepayment(loan)} />
       </div>
     </div>
   );
@@ -304,6 +350,13 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
                 }
               />
             ))}
+          </div>
+          <div className="mt-4 rounded-xl bg-cream-muted px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-ink">Total salary gross annual income</span>
+              <span className="font-display text-lg font-semibold text-ink">{formatCurrency(result.salaryGrossAnnualIncome)}</span>
+            </div>
+            <p className="mt-1 text-xs text-ink-soft">Salary only — this is the figure the HEM benchmark below is calculated from, not rental income.</p>
           </div>
         </div>
 
@@ -432,7 +485,7 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
             household surplus against this loan.
           </p>
           <div className="mt-4">
-            <LoanFields index={0} loan={input.fireLoan} onChange={(next) => set("fireLoan", next)} />
+            <FireLoanFields loan={input.fireLoan} onChange={(next) => set("fireLoan", next)} />
           </div>
         </div>
 
@@ -543,7 +596,9 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
 
             <div>
               <ResultStat label="Existing loan balance" value={formatCurrency(result.existingLoanBalance)} />
+              <ResultStat label="Existing loan repayment / mo" value={formatCurrency2(result.existingLoanMonthlyRepayment)} />
               <ResultStat label="Fire loan balance" value={formatCurrency(result.fireLoanBalance)} />
+              <ResultStat label="Fire loan repayment / mo" value={formatCurrency2(result.fireLoanRepayment)} />
               <ResultStat label="Household net monthly income" value={formatCurrency(result.totalNetMonthlyIncome)} />
               <ResultStat label="Monthly surplus" value={formatCurrency(result.monthlySurplus)} emphasis />
               {!result.currentPath.neverPaysOff && !result.acceleratedPath.neverPaysOff && (
@@ -609,7 +664,7 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
                 <div key={i} className="flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm">
                   <span className="font-semibold text-ink">Rental income #{i + 1}</span>
                   <span className="text-ink-soft">
-                    {formatCurrency(r.grossAnnualRent)} / year · {formatCurrency2(r.grossAnnualRent / 12)} / month
+                    {formatCurrency2(r.weeklyRent)} / week · {formatCurrency2(r.annualRent / 12)} / month
                   </span>
                 </div>
               ))}

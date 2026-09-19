@@ -29,7 +29,7 @@ export type VerifyCodeValues = z.infer<typeof verifyCodeSchema>;
  * schema only validates the calculator snapshot itself.
  */
 const applicantSnapshotSchema = z.object({ grossSalary: z.number(), additionalIncome: z.number() });
-const rentalIncomeSnapshotSchema = z.object({ grossAnnualRent: z.number() });
+const rentalIncomeSnapshotSchema = z.object({ weeklyRent: z.number() });
 const loanSnapshotSchema = z.object({
   balance: z.number(),
   ratePct: z.number(),

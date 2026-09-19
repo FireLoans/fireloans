@@ -1,15 +1,11 @@
 import {
   buildFixedPaymentSchedule,
+  periodicPayment,
   periodsToYearsMonths,
   type BalancePoint,
   type FixedPaymentSchedule,
 } from "./amortization";
-import {
-  MEDICARE_LEVY_RATE,
-  OTHER_INCOME_SHADING,
-  estimateAnnualNetIncome,
-  marginalTaxRateFor,
-} from "./borrowing-power";
+import { MEDICARE_LEVY_RATE, estimateAnnualNetIncome, marginalTaxRateFor } from "./borrowing-power";
 import { getHemMonthlyByLocation, type HemLocation } from "./hem-table";
 
 /**
@@ -28,11 +24,11 @@ export function emptyApplicant(): Applicant {
   return { grossSalary: 0, additionalIncome: 0 };
 }
 
-/** A single rental income line — a flat gross annual figure, not derived from a per-property rent/expenses split. */
-export type RentalIncome = { grossAnnualRent: number };
+/** A single rental income line — entered as gross rent per week, since that's how customers actually know it (not annual). */
+export type RentalIncome = { weeklyRent: number };
 
 export function emptyRentalIncome(): RentalIncome {
-  return { grossAnnualRent: 0 };
+  return { weeklyRent: 0 };
 }
 
 export type ExistingLoan = {
@@ -54,6 +50,22 @@ export type InvestmentLoan = ExistingLoan & { repaymentType: RepaymentType };
 
 export function emptyInvestmentLoan(): InvestmentLoan {
   return { ...emptyLoan(), repaymentType: "principal_and_interest" };
+}
+
+/** Standard P&I minimum repayment for a loan's own balance/rate/term — used to auto-populate the
+ *  Fire Loan's repayment (so it can be compared against the customer's current repayment) rather
+ *  than requiring it to be typed in by hand. `monthlyRepayment` on the loan itself is ignored here. */
+export function computeLoanRepayment(loan: { balance: number; ratePct: number; termYears: number; termMonths: number }): number {
+  const totalMonths = loan.termYears * 12 + loan.termMonths;
+  return periodicPayment(loan.balance, loan.ratePct, totalMonths, 12);
+}
+
+/** Same auto-populate behaviour for an investment loan, respecting its Interest Only vs P&I basis. */
+export function computeInvestmentLoanRepayment(loan: InvestmentLoan): number {
+  if (loan.repaymentType === "interest_only") {
+    return loan.balance * (loan.ratePct / 100 / 12);
+  }
+  return computeLoanRepayment(loan);
 }
 
 export type FireVaultInput = {
@@ -83,7 +95,8 @@ export type ApplicantBreakdown = {
 };
 
 export type RentalIncomeBreakdown = {
-  grossAnnualRent: number;
+  weeklyRent: number;
+  annualRent: number;
 };
 
 export type ScheduleRow = {
@@ -109,6 +122,7 @@ export type LoanPath = {
 
 export type FireVaultResult = {
   totalGrossAnnualIncome: number;
+  salaryGrossAnnualIncome: number;
   totalNetMonthlyIncome: number;
   applicantBreakdown: ApplicantBreakdown[];
   rentalIncomeBreakdown: RentalIncomeBreakdown[];
@@ -122,6 +136,7 @@ export type FireVaultResult = {
   weightedExistingRatePct: number;
   existingLoanMonthlyRepayment: number;
   fireLoanBalance: number;
+  fireLoanRepayment: number;
 
   currentPath: LoanPath;
   acceleratedPath: LoanPath;
@@ -183,7 +198,8 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   }));
 
   const rentalIncomeBreakdown: RentalIncomeBreakdown[] = input.rentalIncomes.map((r) => ({
-    grossAnnualRent: r.grossAnnualRent,
+    weeklyRent: r.weeklyRent,
+    annualRent: r.weeklyRent * 52,
   }));
 
   // Kept separate from totalGrossAnnualIncome below: the HEM lookup must be based on applicant
@@ -191,11 +207,13 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   // inflated the benchmark, since HEM measures a household's own living costs, not income earned
   // from an investment property.
   const salaryGrossAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.grossSalary + a.additionalIncome, 0);
-  const totalRentalAnnual = rentalIncomeBreakdown.reduce((sum, r) => sum + r.grossAnnualRent, 0);
+  const totalRentalAnnual = rentalIncomeBreakdown.reduce((sum, r) => sum + r.annualRent, 0);
   const totalGrossAnnualIncome = salaryGrossAnnualIncome + totalRentalAnnual;
 
-  const netRentalAnnual = estimateAnnualNetIncome(totalRentalAnnual * OTHER_INCOME_SHADING);
-  const totalNetAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.netAnnual, 0) + netRentalAnnual;
+  // Rental income is taken at face value here, with no tax or income-shading applied — Total
+  // Monthly Income is meant to read as a straight sum of what's shown on screen (each applicant's
+  // net monthly figure plus each rental line's own monthly figure), not a further-adjusted number.
+  const totalNetAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.netAnnual, 0) + totalRentalAnnual;
   const totalNetMonthlyIncome = totalNetAnnualIncome / 12;
 
   const isJoint = input.applicants.length >= 2;
@@ -208,10 +226,14 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   const monthlySurplus = totalNetMonthlyIncome - assessedMonthlyExpenses - additionalRepaymentsMonthly;
 
   // The "current path" baseline: what happens if nothing is refinanced and existing loans keep
-  // being paid at their own declared balance/rate/repayment.
+  // being paid at their own declared balance/rate/repayment. Owner-occupied repayments are
+  // whatever the customer actually declared; investment loan repayments are auto-calculated from
+  // balance/rate/term (respecting the Interest Only vs P&I toggle) rather than typed in by hand.
   const existingLoans: ExistingLoan[] = [...input.ownerOccupiedLoans, ...input.investmentLoans];
   const existingLoanBalance = existingLoans.reduce((sum, l) => sum + l.balance, 0);
-  const existingLoanMonthlyRepayment = existingLoans.reduce((sum, l) => sum + l.monthlyRepayment, 0);
+  const existingLoanMonthlyRepayment =
+    input.ownerOccupiedLoans.reduce((sum, l) => sum + l.monthlyRepayment, 0) +
+    input.investmentLoans.reduce((sum, l) => sum + computeInvestmentLoanRepayment(l), 0);
   const weightedExistingRatePct =
     existingLoanBalance > 0 ? existingLoans.reduce((sum, l) => sum + l.balance * l.ratePct, 0) / existingLoanBalance : 0;
 
@@ -247,6 +269,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
 
   return {
     totalGrossAnnualIncome,
+    salaryGrossAnnualIncome,
     totalNetMonthlyIncome,
     applicantBreakdown,
     rentalIncomeBreakdown,
@@ -258,6 +281,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     weightedExistingRatePct,
     existingLoanMonthlyRepayment,
     fireLoanBalance: input.fireLoan.balance,
+    fireLoanRepayment: computeLoanRepayment(input.fireLoan),
     currentPath,
     acceleratedPath,
     interestSaved,
