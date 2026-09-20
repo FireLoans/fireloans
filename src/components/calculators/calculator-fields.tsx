@@ -218,7 +218,7 @@ export function PillToggle<T extends string>({
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
-          className={`h-12 flex-1 text-sm font-semibold transition-colors ${
+          className={`h-12 flex-1 px-4 text-sm font-semibold transition-colors ${
             i > 0 ? "border-l border-border" : ""
           } ${value === opt.value ? "bg-pine-900 text-paper" : "bg-paper text-ink-soft hover:bg-cream-muted"}`}
         >
