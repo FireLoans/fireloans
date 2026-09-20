@@ -609,41 +609,28 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
             </div>
 
             <div>
-              <ResultStat label="Owner occupied loan balance" value={formatCurrency(result.ownerOccupiedLoanBalance)} />
-              <ResultStat label="Owner occupied repayment / mo" value={formatCurrency2(result.ownerOccupiedLoanMonthlyRepayment)} />
-              <ResultStat label="Fire loan balance" value={formatCurrency(result.fireLoanBalance)} />
-              <ResultStat label="Fire loan repayment / mo" value={formatCurrency2(result.fireLoanRepayment)} />
               <ResultStat label="Household net monthly income" value={formatCurrency(result.totalNetMonthlyIncome)} />
-              <ResultStat label="Monthly surplus" value={formatCurrency(result.monthlySurplus)} emphasis />
-              {!result.currentPath.neverPaysOff && !result.acceleratedPath.neverPaysOff && (
-                <>
-                  <ResultStat label="Interest saved" value={formatCurrency(result.interestSaved)} />
-                  <ResultStat label="Time saved" value={yearsMonthsLabel(timeSaved)} />
-                </>
-              )}
-            </div>
-
-            <div>
-              <p className="mb-2 text-sm text-cream/60">How this was assessed</p>
-              <ResultStat label="Total gross annual income" value={formatCurrency(result.totalGrossAnnualIncome)} />
-              <ResultStat label="Assessed living expenses / mo" value={formatCurrency(result.assessedMonthlyExpenses)} />
+              <ResultStat label="Fire loan repayment / mo" value={formatCurrency2(result.fireLoanRepayment)} />
               {result.investmentLoanBalance > 0 && (
-                <>
-                  <ResultStat label="Investment loan balance" value={formatCurrency(result.investmentLoanBalance)} />
-                  <ResultStat label="Investment loan repayment / mo" value={formatCurrency2(result.investmentLoanMonthlyRepayment)} />
-                </>
+                <ResultStat label="Investment loan repayment / mo" value={formatCurrency2(result.investmentLoanMonthlyRepayment)} />
               )}
+              <ResultStat label="Assessed living expenses / mo" value={formatCurrency(result.assessedMonthlyExpenses)} />
               {result.investmentPropertyExpensesMonthly > 0 && (
                 <ResultStat label="Investment property expenses / mo" value={formatCurrency(result.investmentPropertyExpensesMonthly)} />
               )}
               {result.additionalRepaymentsMonthly > 0 && (
                 <ResultStat label="Additional repayments / mo" value={formatCurrency(result.additionalRepaymentsMonthly)} />
               )}
-              {result.netServiceabilityRatio !== null && (
-                <ResultStat label="Net serviceability ratio (NSR)" value={`${result.netServiceabilityRatio.toFixed(2)}x`} />
-              )}
-              {result.loanToIncome !== null && (
-                <ResultStat label="Loan to income (LTI)" value={`${result.loanToIncome.toFixed(2)}x`} />
+              <ResultStat label="Monthly surplus" value={formatCurrency(result.monthlySurplus)} emphasis />
+              {!result.currentPath.neverPaysOff && !result.acceleratedPath.neverPaysOff && (
+                <>
+                  <ResultStat label="Interest saved" value={formatCurrency(result.interestSaved)} />
+                  <ResultStat
+                    label="— from extra repayments alone"
+                    value={formatCurrency(result.interestSavedFromExtraRepayments)}
+                  />
+                  <ResultStat label="Time saved" value={yearsMonthsLabel(timeSaved)} />
+                </>
               )}
             </div>
 

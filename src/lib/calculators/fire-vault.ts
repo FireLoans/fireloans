@@ -153,6 +153,10 @@ export type FireVaultResult = {
   acceleratedPath: LoanPath;
 
   interestSaved: number;
+  /** Interest saved by JUST the extra repayments — Fire Loan at its own rate, minimum repayment
+   *  vs minimum+surplus, with no refinance-rate benefit mixed in. Matches what an "extra
+   *  repayment calculator" (e.g. a bank's own) reports if you only give it the new rate. */
+  interestSavedFromExtraRepayments: number;
   timeSavedMonths: number;
 
   netServiceabilityRatio: number | null;
@@ -278,6 +282,15 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     periodsPerYear: 12,
     payment: fireLoanRepayment + Math.max(0, monthlySurplus),
   });
+  // Fire Loan at its OWN rate, paid at just its own minimum — isolates the extra-repayment effect
+  // from the refinance-rate effect, so it can be compared like-for-like against the accelerated
+  // schedule above (same principal, same rate — only the payment amount differs).
+  const fireLoanMinimumSchedule = buildFixedPaymentSchedule({
+    principal: input.fireLoan.balance,
+    annualRatePct: input.fireLoan.ratePct,
+    periodsPerYear: 12,
+    payment: fireLoanRepayment,
+  });
 
   const totalOutgoingsMonthly =
     assessedMonthlyExpenses +
@@ -293,6 +306,11 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     currentPath.neverPaysOff || acceleratedPath.neverPaysOff
       ? 0
       : Math.max(0, currentPath.totalInterestPaid - acceleratedPath.totalInterestPaid);
+
+  const interestSavedFromExtraRepayments =
+    fireLoanMinimumSchedule.neverPaysOff || acceleratedPath.neverPaysOff
+      ? 0
+      : Math.max(0, fireLoanMinimumSchedule.totalInterestPaid - acceleratedPath.totalInterestPaid);
 
   const currentMonths = currentPath.yearsToPayOff.years * 12 + currentPath.yearsToPayOff.months;
   const acceleratedMonths = acceleratedPath.yearsToPayOff.years * 12 + acceleratedPath.yearsToPayOff.months;
@@ -321,6 +339,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     currentPath,
     acceleratedPath,
     interestSaved,
+    interestSavedFromExtraRepayments,
     timeSavedMonths,
     netServiceabilityRatio: totalOutgoingsMonthly > 0 ? totalNetMonthlyIncome / totalOutgoingsMonthly : null,
     loanToIncome: totalGrossAnnualIncome > 0 ? (ownerOccupiedLoanBalance + investmentLoanBalance) / totalGrossAnnualIncome : null,
