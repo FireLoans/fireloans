@@ -221,7 +221,7 @@ function InvestmentLoanFields({
           value={loan.repaymentType}
           onChange={(v) => onChange({ ...loan, repaymentType: v })}
           options={[
-            { value: "interest_only", label: "Interest Only" },
+            { value: "interest_only", label: "I/O" },
             { value: "principal_and_interest", label: "P&I" },
           ]}
         />
@@ -244,9 +244,16 @@ function InvestmentLoanFields({
           <NumberInput value={loan.termMonths} onChange={(v) => onChange({ ...loan, termMonths: v })} suffix="mo" max={11} />
         </div>
       </div>
-      <div className="mt-3">
-        <label className="mb-1 block text-xs text-ink-soft">Repayment (auto)</label>
-        <AutoRepaymentDisplay value={computeInvestmentLoanRepayment(loan)} />
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Repayment (auto)</label>
+          <AutoRepaymentDisplay value={computeInvestmentLoanRepayment(loan)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-ink-soft">Expenses / month</label>
+          <CurrencyInput value={loan.expensesMonthly} onChange={(v) => onChange({ ...loan, expensesMonthly: v })} />
+          <p className="mt-1 text-xs text-ink-soft">Rates, strata, insurance, agent fees — not the loan repayment</p>
+        </div>
       </div>
     </div>
   );
@@ -285,7 +292,8 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
         summary: {
           totalGrossAnnualIncome: currentResult.totalGrossAnnualIncome,
           totalNetMonthlyIncome: currentResult.totalNetMonthlyIncome,
-          existingLoanBalance: currentResult.existingLoanBalance,
+          ownerOccupiedLoanBalance: currentResult.ownerOccupiedLoanBalance,
+          investmentLoanBalance: currentResult.investmentLoanBalance,
           fireLoanBalance: currentResult.fireLoanBalance,
           monthlySurplus: currentResult.monthlySurplus,
           currentPayoffLabel: yearsMonthsLabel(currentResult.currentPath.yearsToPayOff),
@@ -351,12 +359,18 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
               />
             ))}
           </div>
-          <div className="mt-4 rounded-xl bg-cream-muted px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-ink">Total salary gross annual income</span>
-              <span className="font-display text-lg font-semibold text-ink">{formatCurrency(result.salaryGrossAnnualIncome)}</span>
+          <div className="mt-4 flex flex-col gap-3">
+            <div className="rounded-xl bg-cream-muted px-4 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-ink">Total salary gross annual income</span>
+                <span className="font-display text-lg font-semibold text-ink">{formatCurrency(result.salaryGrossAnnualIncome)}</span>
+              </div>
+              <p className="mt-1 text-xs text-ink-soft">Salary only — this is the figure the HEM benchmark below is calculated from, not rental income.</p>
             </div>
-            <p className="mt-1 text-xs text-ink-soft">Salary only — this is the figure the HEM benchmark below is calculated from, not rental income.</p>
+            <div className="flex items-center justify-between rounded-xl bg-cream-muted px-4 py-3">
+              <span className="text-sm font-semibold text-ink">Total salary net monthly income</span>
+              <span className="font-display text-lg font-semibold text-ink">{formatCurrency2(result.salaryNetMonthlyIncome)}</span>
+            </div>
           </div>
         </div>
 
@@ -595,8 +609,8 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
             </div>
 
             <div>
-              <ResultStat label="Existing loan balance" value={formatCurrency(result.existingLoanBalance)} />
-              <ResultStat label="Existing loan repayment / mo" value={formatCurrency2(result.existingLoanMonthlyRepayment)} />
+              <ResultStat label="Owner occupied loan balance" value={formatCurrency(result.ownerOccupiedLoanBalance)} />
+              <ResultStat label="Owner occupied repayment / mo" value={formatCurrency2(result.ownerOccupiedLoanMonthlyRepayment)} />
               <ResultStat label="Fire loan balance" value={formatCurrency(result.fireLoanBalance)} />
               <ResultStat label="Fire loan repayment / mo" value={formatCurrency2(result.fireLoanRepayment)} />
               <ResultStat label="Household net monthly income" value={formatCurrency(result.totalNetMonthlyIncome)} />
@@ -613,6 +627,15 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
               <p className="mb-2 text-sm text-cream/60">How this was assessed</p>
               <ResultStat label="Total gross annual income" value={formatCurrency(result.totalGrossAnnualIncome)} />
               <ResultStat label="Assessed living expenses / mo" value={formatCurrency(result.assessedMonthlyExpenses)} />
+              {result.investmentLoanBalance > 0 && (
+                <>
+                  <ResultStat label="Investment loan balance" value={formatCurrency(result.investmentLoanBalance)} />
+                  <ResultStat label="Investment loan repayment / mo" value={formatCurrency2(result.investmentLoanMonthlyRepayment)} />
+                </>
+              )}
+              {result.investmentPropertyExpensesMonthly > 0 && (
+                <ResultStat label="Investment property expenses / mo" value={formatCurrency(result.investmentPropertyExpensesMonthly)} />
+              )}
               {result.additionalRepaymentsMonthly > 0 && (
                 <ResultStat label="Additional repayments / mo" value={formatCurrency(result.additionalRepaymentsMonthly)} />
               )}

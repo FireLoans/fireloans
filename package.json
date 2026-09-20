@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:calculators": "node --experimental-strip-types --experimental-loader ./scripts/ts-resolve-loader.mjs scripts/test-calculators.mjs"
+    "test:calculators": "node --experimental-strip-types --experimental-loader ./scripts/ts-resolve-loader.mjs scripts/test-calculators.mjs",
+    "test:fire-vault-surplus": "node --experimental-strip-types --experimental-loader ./scripts/ts-resolve-loader.mjs scripts/test-fire-vault-surplus.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

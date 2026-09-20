@@ -39,6 +39,7 @@ const loanSnapshotSchema = z.object({
 });
 const investmentLoanSnapshotSchema = loanSnapshotSchema.extend({
   repaymentType: z.enum(["interest_only", "principal_and_interest"]),
+  expensesMonthly: z.number(),
 });
 
 export const leadSnapshotSchema = z.object({
@@ -58,7 +59,8 @@ export const leadSnapshotSchema = z.object({
   summary: z.object({
     totalGrossAnnualIncome: z.number(),
     totalNetMonthlyIncome: z.number(),
-    existingLoanBalance: z.number(),
+    ownerOccupiedLoanBalance: z.number(),
+    investmentLoanBalance: z.number(),
     fireLoanBalance: z.number(),
     monthlySurplus: z.number(),
     currentPayoffLabel: z.string().max(100),

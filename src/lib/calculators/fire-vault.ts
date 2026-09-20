@@ -45,11 +45,13 @@ export function emptyLoan(): ExistingLoan {
 
 export type RepaymentType = "interest_only" | "principal_and_interest";
 
-/** An investment loan carries the same fields as any other existing loan, plus its repayment basis. */
-export type InvestmentLoan = ExistingLoan & { repaymentType: RepaymentType };
+/** An investment loan carries the same fields as any other existing loan, plus its repayment
+ *  basis and its own property's running costs (rates, strata, insurance, agent fees) — tracked
+ *  per loan/property since each one can have different costs, not as one combined figure. */
+export type InvestmentLoan = ExistingLoan & { repaymentType: RepaymentType; expensesMonthly: number };
 
 export function emptyInvestmentLoan(): InvestmentLoan {
-  return { ...emptyLoan(), repaymentType: "principal_and_interest" };
+  return { ...emptyLoan(), repaymentType: "principal_and_interest", expensesMonthly: 0 };
 }
 
 /** Standard P&I minimum repayment for a loan's own balance/rate/term — used to auto-populate the
@@ -77,10 +79,15 @@ export type FireVaultInput = {
   useHemBenchmark: boolean;
   manualMonthlyExpenses: number;
 
-  // Existing facilities being refinanced/consolidated — used for the "current path" baseline.
+  // The existing owner-occupied loan(s) — the "current path" baseline runs against these, at
+  // their own actual rate/repayment, entirely separate from the investment loan(s) below.
   ownerOccupiedLoans: ExistingLoan[]; // 0-10
+  // Held debt, not something extra repayments are ever directed at — its own repayment (auto,
+  // respecting Interest Only vs P&I) plus its own running costs (expensesMonthly) are both just
+  // ordinary monthly outgoings.
   investmentLoans: InvestmentLoan[]; // 0-10
-  // The single new consolidated loan being proposed — the "accelerated path" runs against this.
+  // The single new consolidated loan being proposed — the "accelerated path" runs against this,
+  // at its own rate, with its own minimum repayment plus 100% of household surplus.
   fireLoan: ExistingLoan;
 
   carLoanMonthly: number;
@@ -123,6 +130,7 @@ export type LoanPath = {
 export type FireVaultResult = {
   totalGrossAnnualIncome: number;
   salaryGrossAnnualIncome: number;
+  salaryNetMonthlyIncome: number;
   totalNetMonthlyIncome: number;
   applicantBreakdown: ApplicantBreakdown[];
   rentalIncomeBreakdown: RentalIncomeBreakdown[];
@@ -132,9 +140,12 @@ export type FireVaultResult = {
   additionalRepaymentsMonthly: number;
   monthlySurplus: number;
 
-  existingLoanBalance: number;
-  weightedExistingRatePct: number;
-  existingLoanMonthlyRepayment: number;
+  ownerOccupiedLoanBalance: number;
+  weightedOwnerOccupiedRatePct: number;
+  ownerOccupiedLoanMonthlyRepayment: number;
+  investmentLoanBalance: number;
+  investmentLoanMonthlyRepayment: number;
+  investmentPropertyExpensesMonthly: number;
   fireLoanBalance: number;
   fireLoanRepayment: number;
 
@@ -207,6 +218,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   // inflated the benchmark, since HEM measures a household's own living costs, not income earned
   // from an investment property.
   const salaryGrossAnnualIncome = applicantBreakdown.reduce((sum, a) => sum + a.grossSalary + a.additionalIncome, 0);
+  const salaryNetMonthlyIncome = applicantBreakdown.reduce((sum, a) => sum + a.netAnnual, 0) / 12;
   const totalRentalAnnual = rentalIncomeBreakdown.reduce((sum, r) => sum + r.annualRent, 0);
   const totalGrossAnnualIncome = salaryGrossAnnualIncome + totalRentalAnnual;
 
@@ -223,38 +235,58 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   const assessedMonthlyExpenses = input.useHemBenchmark ? hemMonthlyBenchmark : input.manualMonthlyExpenses;
 
   const additionalRepaymentsMonthly = input.carLoanMonthly + input.personalLoanMonthly;
-  const monthlySurplus = totalNetMonthlyIncome - assessedMonthlyExpenses - additionalRepaymentsMonthly;
+  const fireLoanRepayment = computeLoanRepayment(input.fireLoan);
+  const investmentLoanBalance = input.investmentLoans.reduce((sum, l) => sum + l.balance, 0);
+  const investmentLoanMonthlyRepayment = input.investmentLoans.reduce((sum, l) => sum + computeInvestmentLoanRepayment(l), 0);
+  const investmentPropertyExpensesMonthly = input.investmentLoans.reduce((sum, l) => sum + l.expensesMonthly, 0);
 
-  // The "current path" baseline: what happens if nothing is refinanced and existing loans keep
-  // being paid at their own declared balance/rate/repayment. Owner-occupied repayments are
-  // whatever the customer actually declared; investment loan repayments are auto-calculated from
-  // balance/rate/term (respecting the Interest Only vs P&I toggle) rather than typed in by hand.
-  const existingLoans: ExistingLoan[] = [...input.ownerOccupiedLoans, ...input.investmentLoans];
-  const existingLoanBalance = existingLoans.reduce((sum, l) => sum + l.balance, 0);
-  const existingLoanMonthlyRepayment =
-    input.ownerOccupiedLoans.reduce((sum, l) => sum + l.monthlyRepayment, 0) +
-    input.investmentLoans.reduce((sum, l) => sum + computeInvestmentLoanRepayment(l), 0);
-  const weightedExistingRatePct =
-    existingLoanBalance > 0 ? existingLoans.reduce((sum, l) => sum + l.balance * l.ratePct, 0) / existingLoanBalance : 0;
+  // Monthly surplus is what's left of household income after EVERY outgoing — living expenses,
+  // investment property costs, the Fire Loan's own minimum repayment, the investment loan's own
+  // repayment, and the smaller additional repayments. This surplus is what then gets redirected
+  // as extra repayments onto the Fire Loan (the accelerated path below) — it's not "income before
+  // the home loan," it's what's genuinely left over each month.
+  const monthlySurplus =
+    totalNetMonthlyIncome -
+    assessedMonthlyExpenses -
+    investmentPropertyExpensesMonthly -
+    fireLoanRepayment -
+    investmentLoanMonthlyRepayment -
+    additionalRepaymentsMonthly;
+
+  // The "current path" baseline: what happens to the EXISTING owner-occupied loan(s) if nothing
+  // is refinanced, paid at their own declared balance/rate/repayment. The investment loan is
+  // deliberately excluded here — it's held debt, not something extra repayments are ever
+  // redirected at, so it plays no part in this payoff comparison.
+  const ownerOccupiedLoanBalance = input.ownerOccupiedLoans.reduce((sum, l) => sum + l.balance, 0);
+  const ownerOccupiedLoanMonthlyRepayment = input.ownerOccupiedLoans.reduce((sum, l) => sum + l.monthlyRepayment, 0);
+  const weightedOwnerOccupiedRatePct =
+    ownerOccupiedLoanBalance > 0
+      ? input.ownerOccupiedLoans.reduce((sum, l) => sum + l.balance * l.ratePct, 0) / ownerOccupiedLoanBalance
+      : 0;
 
   const currentSchedule = buildFixedPaymentSchedule({
-    principal: existingLoanBalance,
-    annualRatePct: weightedExistingRatePct,
+    principal: ownerOccupiedLoanBalance,
+    annualRatePct: weightedOwnerOccupiedRatePct,
     periodsPerYear: 12,
-    payment: existingLoanMonthlyRepayment,
+    payment: ownerOccupiedLoanMonthlyRepayment,
   });
-  // The "accelerated path": the single proposed FIRE loan, with the full household surplus
-  // redirected against it every month instead of just its own minimum repayment.
+  // The "accelerated path": the single proposed FIRE loan, paid at its own minimum repayment PLUS
+  // 100% of household surplus redirected against it every month.
   const acceleratedSchedule = buildFixedPaymentSchedule({
     principal: input.fireLoan.balance,
     annualRatePct: input.fireLoan.ratePct,
     periodsPerYear: 12,
-    payment: Math.max(0, monthlySurplus),
+    payment: fireLoanRepayment + Math.max(0, monthlySurplus),
   });
 
-  const totalOutgoingsMonthly = assessedMonthlyExpenses + additionalRepaymentsMonthly + existingLoanMonthlyRepayment;
+  const totalOutgoingsMonthly =
+    assessedMonthlyExpenses +
+    investmentPropertyExpensesMonthly +
+    fireLoanRepayment +
+    investmentLoanMonthlyRepayment +
+    additionalRepaymentsMonthly;
 
-  const currentPath = toLoanPath(currentSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, weightedExistingRatePct);
+  const currentPath = toLoanPath(currentSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, weightedOwnerOccupiedRatePct);
   const acceleratedPath = toLoanPath(acceleratedSchedule, totalNetMonthlyIncome, assessedMonthlyExpenses, input.fireLoan.ratePct);
 
   const interestSaved =
@@ -270,6 +302,7 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
   return {
     totalGrossAnnualIncome,
     salaryGrossAnnualIncome,
+    salaryNetMonthlyIncome,
     totalNetMonthlyIncome,
     applicantBreakdown,
     rentalIncomeBreakdown,
@@ -277,17 +310,20 @@ export function calculateFireVault(input: FireVaultInput): FireVaultResult {
     assessedMonthlyExpenses,
     additionalRepaymentsMonthly,
     monthlySurplus,
-    existingLoanBalance,
-    weightedExistingRatePct,
-    existingLoanMonthlyRepayment,
+    ownerOccupiedLoanBalance,
+    weightedOwnerOccupiedRatePct,
+    ownerOccupiedLoanMonthlyRepayment,
+    investmentLoanBalance,
+    investmentLoanMonthlyRepayment,
+    investmentPropertyExpensesMonthly,
     fireLoanBalance: input.fireLoan.balance,
-    fireLoanRepayment: computeLoanRepayment(input.fireLoan),
+    fireLoanRepayment,
     currentPath,
     acceleratedPath,
     interestSaved,
     timeSavedMonths,
     netServiceabilityRatio: totalOutgoingsMonthly > 0 ? totalNetMonthlyIncome / totalOutgoingsMonthly : null,
-    loanToIncome: totalGrossAnnualIncome > 0 ? existingLoanBalance / totalGrossAnnualIncome : null,
+    loanToIncome: totalGrossAnnualIncome > 0 ? (ownerOccupiedLoanBalance + investmentLoanBalance) / totalGrossAnnualIncome : null,
   };
 }
 

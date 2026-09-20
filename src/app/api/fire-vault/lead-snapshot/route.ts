@@ -43,11 +43,12 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
 
   const investmentLoanRows = input.investmentLoans.length
     ? input.investmentLoans
-        .map((l, i) =>
-          loanRow(l, `Loan #${i + 1}`, computeInvestmentLoanRepayment(l), l.repaymentType === "interest_only" ? "Interest Only" : "P&I")
+        .map(
+          (l, i) =>
+            `<tr><td>Loan #${i + 1}</td><td>${formatCurrency(l.balance)}</td><td>${l.ratePct}%</td><td>${l.termYears}y ${l.termMonths}m left</td><td>${formatCurrency(computeInvestmentLoanRepayment(l))}/mo</td><td>${l.repaymentType === "interest_only" ? "Interest Only" : "P&I"}</td><td>${formatCurrency(l.expensesMonthly)}/mo expenses</td></tr>`
         )
         .join("")
-    : "<tr><td colspan=\"6\">None entered</td></tr>";
+    : "<tr><td colspan=\"7\">None entered</td></tr>";
 
   const fireLoanRow = loanRow(input.fireLoan, "Fire Loan", computeLoanRepayment(input.fireLoan));
 
@@ -60,7 +61,8 @@ function buildEmailHtml(name: string, email: string, mobile: string, data: LeadS
     <h3>Summary</h3>
     <p><strong>Total gross annual income:</strong> ${formatCurrency(summary.totalGrossAnnualIncome)}</p>
     <p><strong>Total net monthly income:</strong> ${formatCurrency(summary.totalNetMonthlyIncome)}</p>
-    <p><strong>Existing loan balance:</strong> ${formatCurrency(summary.existingLoanBalance)}</p>
+    <p><strong>Owner occupied loan balance:</strong> ${formatCurrency(summary.ownerOccupiedLoanBalance)}</p>
+    <p><strong>Investment loan balance:</strong> ${formatCurrency(summary.investmentLoanBalance)}</p>
     <p><strong>Fire loan balance:</strong> ${formatCurrency(summary.fireLoanBalance)}</p>
     <p><strong>Monthly surplus:</strong> ${formatCurrency(summary.monthlySurplus)}</p>
     <p><strong>Fire loan rate:</strong> ${input.fireLoan.ratePct}%</p>
