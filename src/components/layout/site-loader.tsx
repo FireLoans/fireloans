@@ -7,8 +7,8 @@ const WORD_1 = "F.I.R.E".split("");
 const WORD_2 = "LOANS".split("");
 const ALL_LETTERS = [...WORD_1, ...WORD_2];
 
-const MIN_ANIMATION_MS = 2500;
-const SAFETY_MAX_MS = 6000;
+const MIN_ANIMATION_MS = 4500;
+const SAFETY_MAX_MS = 8000;
 const EXIT_TRANSITION_MS = 700;
 
 type LetterOffset = { x: number; y: number; rotate: number };
@@ -185,7 +185,7 @@ export function SiteLoader() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: reducedMotion ? 0.3 : 1.05 }}
           >
-            Helping Australians Achieve Financial Independence
+            Helping Australians Achieve Financial Independence & Retire Early
           </motion.p>
 
           {/* Thin progress line */}

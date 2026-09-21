@@ -9,17 +9,25 @@ import { sendCodeSchema, verifyCodeSchema, type SendCodeValues, type VerifyCodeV
 
 const fieldClasses =
   "h-12 w-full rounded-lg border border-white/20 bg-white/10 px-4 text-sm text-paper placeholder:text-cream/40 backdrop-blur-md transition-colors focus:border-gold-400/60 focus:outline-none focus:ring-2 focus:ring-gold-400/20 [color-scheme:dark]";
+const fieldErrorClasses =
+  "h-12 w-full rounded-lg border border-error bg-error/10 px-4 text-sm text-paper placeholder:text-cream/40 backdrop-blur-md transition-colors focus:border-error focus:outline-none focus:ring-2 focus:ring-error/20 [color-scheme:dark]";
 const labelClasses = "mb-1.5 block text-sm font-semibold text-cream/90";
 
 type Step = "request" | "verify";
 
 /**
- * FIRE Vault's access gate is intentionally stateless: no account is created, nothing is
- * written to a database or disk anywhere. Entering a name, email and mobile number gets a
- * fixed access code emailed to that address (see src/lib/fire-vault/schema.ts); entering that
- * code back sets a
- * signed, expiring cookie (src/lib/fire-vault/session.ts) that the server re-verifies on every
- * request to /fire-vault. That's the entire "login" — nothing persists beyond it.
+ * FIRE Vault's access gate itself creates no account: entering a name, email and mobile number
+ * gets a real, random 6-digit code emailed to that address (see src/app/api/fire-vault/send-code)
+ * — the code itself lives only in a signed, short-lived cookie in the visitor's own browser
+ * (src/lib/fire-vault/session.ts), never on a server. Before sending, the email's domain is
+ * checked for actual mail servers (src/lib/fire-vault/email-domain.ts) — a free DNS lookup that
+ * catches typo'd/fake domains, though it can't confirm the specific mailbox exists. Entering the
+ * code back sets a second, longer-lived signed cookie that the server re-verifies on every
+ * request to /fire-vault.
+ *
+ * One thing IS now persisted beyond the session, deliberately: the calculator numbers a verified
+ * visitor enters are saved against their email (src/lib/fire-vault/profile-store.ts), so they get
+ * their own numbers back if they return later instead of starting over. The copy below says so.
  */
 export function FireVaultGate() {
   const router = useRouter();
@@ -44,9 +52,13 @@ export function FireVaultGate() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
-      const data = (await res.json().catch(() => null)) as { error?: string; devNotice?: string } | null;
+      const data = (await res.json().catch(() => null)) as { error?: string; field?: string; devNotice?: string } | null;
       if (!res.ok) {
-        setServerError(data?.error ?? "Something went wrong. Please try again.");
+        if (data?.field === "email") {
+          requestForm.setError("email", { type: "server", message: data.error ?? "Enter a real email address." });
+        } else {
+          setServerError(data?.error ?? "Something went wrong. Please try again.");
+        }
         return;
       }
       if (data?.devNotice) setDevNotice(data.devNotice);
@@ -92,7 +104,7 @@ export function FireVaultGate() {
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-cream/65">
           {step === "request"
-            ? "A more powerful serviceability calculator for multi-property, multi-loan scenarios. Enter your details and we'll send you an access code — nothing is stored."
+            ? "A more powerful serviceability calculator for multi-property, multi-loan scenarios. Enter your details and we'll email you an access code. Your numbers are saved so you can pick up where you left off next time."
             : `We sent a code to ${email}. Enter it below to continue.`}
         </p>
 
@@ -134,7 +146,7 @@ export function FireVaultGate() {
                 <input
                   id="fv-email"
                   type="email"
-                  className={fieldClasses}
+                  className={requestForm.formState.errors.email ? fieldErrorClasses : fieldClasses}
                   placeholder="jordan@email.com"
                   {...requestForm.register("email")}
                 />
@@ -195,8 +207,12 @@ export function FireVaultGate() {
                 </label>
                 <input
                   id="fv-code"
-                  className={`${fieldClasses} text-center text-lg font-semibold uppercase tracking-[0.2em]`}
-                  placeholder="FIRELOANSXX"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  className={`${fieldClasses} text-center text-lg font-semibold tracking-[0.3em]`}
+                  placeholder="123456"
                   autoComplete="one-time-code"
                   {...verifyForm.register("code")}
                 />

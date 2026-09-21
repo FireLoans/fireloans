@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyCodeSchema, FIRE_VAULT_PASSCODE } from "@/lib/fire-vault/schema";
+import { verifyCodeSchema } from "@/lib/fire-vault/schema";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { createSessionCookie, FIRE_VAULT_COOKIE_NAME, FIRE_VAULT_SESSION_MAX_AGE_SECONDS } from "@/lib/fire-vault/session";
+import {
+  createSessionCookie,
+  FIRE_VAULT_COOKIE_NAME,
+  FIRE_VAULT_SESSION_MAX_AGE_SECONDS,
+  FIRE_VAULT_PENDING_CODE_COOKIE,
+  verifyPendingCodeCookie,
+} from "@/lib/fire-vault/session";
 import { escapeHtml, FIRE_VAULT_BROKER_RECIPIENT, sendFireVaultNotification } from "@/lib/fire-vault/mailer";
 
 export const runtime = "nodejs";
@@ -36,7 +42,8 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
-  if (data.code.trim().toUpperCase() !== FIRE_VAULT_PASSCODE) {
+  const pendingCookie = req.cookies.get(FIRE_VAULT_PENDING_CODE_COOKIE)?.value;
+  if (!verifyPendingCodeCookie(pendingCookie, data.email, data.code.trim())) {
     return NextResponse.json({ error: "That code doesn't match. Check your email and try again." }, { status: 401 });
   }
 
@@ -52,6 +59,8 @@ export async function POST(req: NextRequest) {
     path: "/",
     maxAge: FIRE_VAULT_SESSION_MAX_AGE_SECONDS,
   });
+  // The one-time code has now been redeemed — clear it so it can't be reused.
+  response.cookies.set(FIRE_VAULT_PENDING_CODE_COOKIE, "", { path: "/", maxAge: 0 });
 
   // Fire-and-forget: let the visitor into the calculator immediately, don't make them wait on
   // this email to complete.

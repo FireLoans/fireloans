@@ -40,13 +40,14 @@ export default async function OpengraphImage() {
           <div
             style={{
               marginTop: 18,
+              width: 500,
               fontSize: 24,
               color: "#D8BD85",
               fontFamily: "Georgia, serif",
               letterSpacing: 1,
             }}
           >
-            Helping Australians Achieve Financial Independence
+            Helping Australians Achieve Financial Independence & Retire Early
           </div>
           <div
             style={{

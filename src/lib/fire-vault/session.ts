@@ -61,3 +61,45 @@ export function verifySessionCookie(cookieValue: string | undefined | null): Fir
     return null;
   }
 }
+
+/**
+ * Holds the real, per-request email code between "send-code" and "verify" — same signed-cookie
+ * approach as the session above, just much shorter-lived. The code itself lives only in this
+ * cookie (in the visitor's own browser) and in the email sent to their inbox; never on a server.
+ */
+export const FIRE_VAULT_PENDING_CODE_COOKIE = "fire_vault_pending_code";
+export const FIRE_VAULT_PENDING_CODE_MAX_AGE_SECONDS = 60 * 10; // 10 minutes to enter the code
+
+type PendingCode = { email: string; code: string; exp: number };
+
+export function createPendingCodeCookie(email: string, code: string): string {
+  const exp = Date.now() + FIRE_VAULT_PENDING_CODE_MAX_AGE_SECONDS * 1000;
+  const payload = base64UrlEncode(JSON.stringify({ email, code, exp } satisfies PendingCode));
+  const signature = sign(payload);
+  return `${payload}.${signature}`;
+}
+
+/** Checks the submitted code against the signed cookie for the SAME email address — a code
+ *  emailed to one address can't be redeemed against a different one entered on step two. */
+export function verifyPendingCodeCookie(cookieValue: string | undefined | null, email: string, code: string): boolean {
+  if (!cookieValue) return false;
+  const [payload, signature] = cookieValue.split(".");
+  if (!payload || !signature) return false;
+
+  const expectedSignature = sign(payload);
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expectedSignature);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
+
+  try {
+    const pending = JSON.parse(base64UrlDecode(payload)) as PendingCode;
+    if (typeof pending.exp !== "number" || Date.now() > pending.exp) return false;
+    if (pending.email.toLowerCase() !== email.toLowerCase()) return false;
+
+    const submitted = Buffer.from(code);
+    const expected = Buffer.from(pending.code);
+    return submitted.length === expected.length && timingSafeEqual(submitted, expected);
+  } catch {
+    return false;
+  }
+}

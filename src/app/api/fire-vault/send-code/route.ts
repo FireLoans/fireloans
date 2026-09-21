@@ -1,9 +1,15 @@
+import { randomInt } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import nodemailer from "nodemailer";
-import { FIRE_VAULT_PASSCODE, sendCodeSchema } from "@/lib/fire-vault/schema";
+import { Resend } from "resend";
+import { sendCodeSchema } from "@/lib/fire-vault/schema";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { createPendingCodeCookie, FIRE_VAULT_PENDING_CODE_COOKIE, FIRE_VAULT_PENDING_CODE_MAX_AGE_SECONDS } from "@/lib/fire-vault/session";
+import { isDeliverableEmailDomain } from "@/lib/fire-vault/email-domain";
 
 export const runtime = "nodejs";
+
+// Same verified sending domain as the contact form (src/app/api/contact/route.ts).
+const FROM_ADDRESS = "Fire Loans <noreply@fireloans.com.au>";
 
 function escapeHtml(value: string): string {
   return value
@@ -20,10 +26,12 @@ function getClientIp(req: NextRequest): string {
   return req.headers.get("x-real-ip") ?? "unknown";
 }
 
+const CANT_SEND_ERROR = "We couldn't send that right now. Please call 0478 933 786 or email broker@fireloans.com.au.";
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
 
-  // 3 send-code requests per 10 minutes per IP   nobody legitimately needs more to receive one email.
+  // 3 send-code requests per 10 minutes per IP — nobody legitimately needs more to receive one email.
   const { allowed, retryAfterMs } = checkRateLimit(`fire-vault-send-code:${ip}`, 3, 10 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json(
@@ -50,59 +58,77 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // Sent via Gmail SMTP (not Resend, which the rest of the site's contact form uses) — requires a
-  // Gmail account with 2-Step Verification on and an App Password generated for it (a normal Gmail
-  // password is rejected by Google's SMTP servers). See .env.example for setup notes.
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
-  if (!gmailUser || !gmailAppPassword) {
-    console.error("FIRE Vault send-code requested but GMAIL_USER/GMAIL_APP_PASSWORD are not configured — email not sent.", {
+  // Free, no-account-needed check: does this domain even have mail servers? Catches typo'd or
+  // made-up domains before we waste a send attempt. Can't confirm the specific mailbox exists —
+  // see email-domain.ts for what this does and doesn't guarantee.
+  const deliverable = await isDeliverableEmailDomain(data.email);
+  if (!deliverable) {
+    return NextResponse.json(
+      { error: "This doesn't look like a real email address. Please enter one you can actually access.", field: "email" },
+      { status: 400 }
+    );
+  }
+
+  const code = String(randomInt(100000, 1000000));
+
+  const setPendingCookie = (res: NextResponse) => {
+    res.cookies.set(FIRE_VAULT_PENDING_CODE_COOKIE, createPendingCodeCookie(data.email, code), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: FIRE_VAULT_PENDING_CODE_MAX_AGE_SECONDS,
+    });
+    return res;
+  };
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error("FIRE Vault send-code requested but RESEND_API_KEY is not configured — email not sent.", {
       name: data.name,
       email: data.email,
     });
     // Dev-only convenience: with no real mailbox connected yet, surface the code directly in the
     // response instead of a dead-end error, so the gate is still testable end-to-end locally.
     // Never done in production — a live site with no mail configured must fail loudly, not leak
-    // the passcode to anyone who asks.
+    // the code to anyone who asks. The pending cookie is still set either way, since a real code
+    // was genuinely committed to for this request.
     if (process.env.NODE_ENV !== "production") {
-      return NextResponse.json({
-        ok: true,
-        devNotice: `Email isn't configured in this environment yet, so nothing was actually sent. Your code is: ${FIRE_VAULT_PASSCODE}`,
-      });
+      return setPendingCookie(
+        NextResponse.json({
+          ok: true,
+          devNotice: `Email isn't configured in this environment yet, so nothing was actually sent. Your code is: ${code}`,
+        })
+      );
     }
-    return NextResponse.json(
-      { error: "We couldn't send that right now. Please call 0478 933 786 or email broker@fireloans.com.au." },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: CANT_SEND_ERROR }, { status: 503 });
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: gmailUser, pass: gmailAppPassword },
-    });
-
-    await transporter.sendMail({
-      from: `Fire Loans <${gmailUser}>`,
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from: FROM_ADDRESS,
       to: data.email,
       subject: "Your FIRE Vault access code",
       html: `
         <h2>Your FIRE Vault access code</h2>
         <p>Hi ${escapeHtml(data.name)},</p>
         <p>Enter this code to unlock the FIRE Vault calculator:</p>
-        <p style="font-size:28px;font-weight:700;letter-spacing:2px;">${FIRE_VAULT_PASSCODE}</p>
-        <p style="color:#888;font-size:12px;">If you didn't request this, you can ignore this email.</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:2px;">${code}</p>
+        <p style="color:#888;font-size:12px;">This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
         <hr />
         <p style="color:#888;font-size:12px;">Sent from the Fire Loans website.</p>
       `,
     });
 
-    return NextResponse.json({ ok: true });
+    if (error) {
+      console.error("Resend failed to send FIRE Vault access code:", error);
+      return NextResponse.json({ error: CANT_SEND_ERROR }, { status: 502 });
+    }
+
+    return setPendingCookie(NextResponse.json({ ok: true }));
   } catch (err) {
-    console.error("Gmail SMTP failed to send FIRE Vault access code:", err);
-    return NextResponse.json(
-      { error: "We couldn't send that right now. Please call 0478 933 786 or email broker@fireloans.com.au." },
-      { status: 502 }
-    );
+    console.error("Unexpected error sending FIRE Vault access code:", err);
+    return NextResponse.json({ error: CANT_SEND_ERROR }, { status: 500 });
   }
 }

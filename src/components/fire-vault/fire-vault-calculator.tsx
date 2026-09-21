@@ -259,8 +259,18 @@ function InvestmentLoanFields({
   );
 }
 
-export function FireVaultCalculator({ name, email }: { name: string; email: string }) {
-  const [input, setInput] = useState<UIState>(DEFAULT_STATE);
+export function FireVaultCalculator({
+  name,
+  email,
+  savedInput,
+}: {
+  name: string;
+  email: string;
+  /** A returning visitor's own last inputs, restored verbatim instead of the demo defaults —
+   *  see src/lib/fire-vault/profile-store.ts and src/app/fire-vault/page.tsx. */
+  savedInput?: FireVaultInput;
+}) {
+  const [input, setInput] = useState<UIState>(savedInput ?? DEFAULT_STATE);
   const hasInteracted = useRef(false);
 
   function set<K extends keyof UIState>(key: K, value: UIState[K]) {
@@ -325,6 +335,13 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
 
   return (
     <div className="flex flex-col gap-8">
+      {savedInput && (
+        <div className="rounded-2xl border border-brand-500/30 bg-brand-50 px-5 py-3 text-sm text-ink">
+          Welcome back — we&apos;ve restored your numbers from last time. Nothing new was entered for you; edit
+          anything below and it&apos;ll be saved again when you leave.
+        </div>
+      )}
+
       {/* All inputs — one full-width card, stacked top to bottom */}
       <div className="flex flex-col gap-7 rounded-3xl bg-paper p-6 shadow-xl shadow-ink/5 sm:p-8">
         <div>

@@ -4,6 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { FIRE_VAULT_COOKIE_NAME, verifySessionCookie } from "@/lib/fire-vault/session";
 import { escapeHtml, FIRE_VAULT_BROKER_RECIPIENT, sendFireVaultNotification } from "@/lib/fire-vault/mailer";
 import { computeInvestmentLoanRepayment, computeLoanRepayment } from "@/lib/calculators/fire-vault";
+import { saveFireVaultProfile } from "@/lib/fire-vault/profile-store";
 
 export const runtime = "nodejs";
 
@@ -118,6 +119,15 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
+
+  // So they don't have to start over if they come back later with the same email — the one
+  // deliberate exception to FIRE Vault otherwise storing nothing (see profile-store.ts).
+  await saveFireVaultProfile(session.email, {
+    name: session.name,
+    mobile: session.mobile,
+    input: parsed.data.input,
+    updatedAt: Date.now(),
+  });
 
   await sendFireVaultNotification({
     to: FIRE_VAULT_BROKER_RECIPIENT,
