@@ -337,8 +337,7 @@ export function FireVaultCalculator({
     <div className="flex flex-col gap-8">
       {savedInput && (
         <div className="rounded-2xl border border-brand-500/30 bg-brand-50 px-5 py-3 text-sm text-ink">
-          Welcome back — we&apos;ve restored your numbers from last time. Nothing new was entered for you; edit
-          anything below and it&apos;ll be saved again when you leave.
+          Welcome back — we&apos;ve restored your numbers from last time.
         </div>
       )}
 

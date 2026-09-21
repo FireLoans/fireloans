@@ -7,7 +7,7 @@ import type { FireVaultInput } from "@/lib/calculators/fire-vault";
  * later. Everything else about FIRE Vault (the access code, the session) stays the
  * signed-cookie-only design described elsewhere — this is a deliberate, narrow exception to it.
  */
-const PROFILE_TTL_SECONDS = 60 * 60 * 24 * 180; // 180 days
+const PROFILE_TTL_SECONDS = 60 * 60 * 24 * 365; // 1 year
 
 export type FireVaultProfile = {
   name: string;
