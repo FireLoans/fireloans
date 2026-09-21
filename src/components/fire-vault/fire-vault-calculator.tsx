@@ -300,7 +300,7 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
           acceleratedPayoffLabel: currentResult.acceleratedPath.neverPaysOff
             ? "Not viable at this rate"
             : yearsMonthsLabel(currentResult.acceleratedPath.yearsToPayOff),
-          interestSaved: currentResult.interestSaved,
+          interestSaved: currentResult.interestSavedFromExtraRepayments,
           neverPaysOff: currentResult.acceleratedPath.neverPaysOff,
         },
       };
@@ -624,11 +624,7 @@ export function FireVaultCalculator({ name, email }: { name: string; email: stri
               <ResultStat label="Monthly surplus" value={formatCurrency(result.monthlySurplus)} emphasis />
               {!result.currentPath.neverPaysOff && !result.acceleratedPath.neverPaysOff && (
                 <>
-                  <ResultStat label="Interest saved" value={formatCurrency(result.interestSaved)} />
-                  <ResultStat
-                    label="— from extra repayments alone"
-                    value={formatCurrency(result.interestSavedFromExtraRepayments)}
-                  />
+                  <ResultStat label="Interest saved" value={formatCurrency(result.interestSavedFromExtraRepayments)} />
                   <ResultStat label="Time saved" value={yearsMonthsLabel(timeSaved)} />
                 </>
               )}
